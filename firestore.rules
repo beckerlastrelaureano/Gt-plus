@@ -210,5 +210,73 @@ service cloud.firestore {
       allow update, delete: if esSuperadmin()
                              || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
     }
+
+    // ------------------------------------------------------------------
+    // rutinasGym/{dni}   (rutina de un socio de gimnasio, mismo formato
+    // que "rutinas/{alumnoUid}" pero indexada por DNI en vez de uid).
+    // ------------------------------------------------------------------
+    match /rutinasGym/{dni} {
+      allow get: if esSuperadmin()
+                 || resource == null
+                 || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+      allow list: if esSuperadmin()
+                  || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+      allow create: if esSuperadmin()
+                    || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid);
+      allow update: if esSuperadmin()
+                    || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid
+                        && request.resource.data.entrenadorId == resource.data.entrenadorId);
+      allow delete: if esSuperadmin()
+                    || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+    }
+
+    // ------------------------------------------------------------------
+    // entrenamientosGym/{id}   (cargas de reps/peso de un socio, historial
+    // para el gráfico de progreso — equivalente a "entrenamientos" de
+    // alumnos, pero por DNI y cargado por el entrenador, no en una sesión
+    // guiada con timer).
+    // ------------------------------------------------------------------
+    match /entrenamientosGym/{id} {
+      allow read: if esSuperadmin()
+                  || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+      allow create: if esSuperadmin()
+                    || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid);
+      allow update, delete: if esSuperadmin()
+                             || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+    }
+
+    // ------------------------------------------------------------------
+    // gastosGym/{id}   (Finanzas: gastos manuales de un solo dueño de
+    // gimnasio. Los INGRESOS no se guardan acá — se calculan sumando la
+    // colección "pagos" que ya existe, para que nunca se desincronicen).
+    // ------------------------------------------------------------------
+    match /gastosGym/{id} {
+      allow get: if esSuperadmin()
+                 || resource == null
+                 || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+      allow list: if esSuperadmin()
+                  || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+      allow create: if esSuperadmin()
+                    || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid);
+      allow update, delete: if esSuperadmin()
+                             || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+    }
+
+    // ------------------------------------------------------------------
+    // rutinasPublicas/{token}   (copia de solo lectura de la rutina de un
+    // socio, para verla desde un QR SIN loguearse. El "token" es un id
+    // largo al azar — nadie puede adivinarlo, y "list" está bloqueado para
+    // que tampoco se pueda navegar/enumerar toda la colección. Conocer el
+    // token exacto es, a propósito, el único requisito para leerlo.)
+    // ------------------------------------------------------------------
+    match /rutinasPublicas/{token} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid;
+      allow update: if estoyAutenticado() && resource.data.entrenadorId == request.auth.uid
+                    && request.resource.data.entrenadorId == resource.data.entrenadorId;
+      allow delete: if esSuperadmin()
+                    || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+    }
   }
 }

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es" data-tema="oscuro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rutina</title>
+<meta name="robots" content="noindex, nofollow">
+
+<!-- marca.js define y aplica el nombre/colores de este cliente -->
+<script src="js/marca.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="css/style.css">
+<link rel="apple-touch-icon" href="assets/iconos/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/iconos/icon-192.png">
+<style>
+  /* Esta página no tiene sidebar/topbar — es una vista suelta para abrir
+     desde un QR, sin necesidad de loguearse. */
+  .contenedor-rutina-publica { max-width: 640px; margin: 0 auto; padding: 1.6rem 1.1rem 3rem; }
+  .encabezado-rutina-publica { text-align: center; margin-bottom: 1.4rem; }
+  .encabezado-rutina-publica img { width: 56px; height: 56px; border-radius: 50%; margin-bottom: .6rem; }
+</style>
+</head>
+<body>
+
+<div class="contenedor-rutina-publica">
+  <div class="encabezado-rutina-publica">
+    <img src="assets/iconos/logo-mark.png" alt="">
+    <h1 style="margin-bottom:.1rem"><span data-marca="nombre"></span><strong data-marca="sufijo"></strong></h1>
+    <p class="texto-suave">Rutina de entrenamiento</p>
+  </div>
+  <div id="contenido-rutina-publica">
+    <p class="texto-suave" style="text-align:center">Cargando rutina...</p>
+  </div>
+</div>
+
+<!-- Firebase (compat) — SOLO lectura pública de "rutinasPublicas", sin login -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
+<script src="js/database.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/rutina-publica.js"></script>
+
+</body>
+</html>

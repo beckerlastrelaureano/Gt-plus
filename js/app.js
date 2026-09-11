@@ -36,7 +36,7 @@ const App = (() => {
   }
   function debounce(fn, ms = 200) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
-  const state = { vistaActual: null, alumnoSeleccionadoUid: null, sesionActiva: null, calendario: null };
+  const state = { vistaActual: null, alumnoSeleccionadoUid: null, dniSeleccionado: null, sesionActiva: null, calendario: null };
   const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -498,7 +498,8 @@ const App = (() => {
     } else if (usuario.rol === 'entrenador') {
       nav.innerHTML = `
         <a href="#" class="nav-item" data-view="alumnos">${icon('routine')}<span>Mis alumnos</span></a>
-        <a href="#" class="nav-item" data-view="recepcion">${icon('search')}<span>Recepción</span></a>`;
+        <a href="#" class="nav-item" data-view="recepcion">${icon('search')}<span>Recepción</span></a>
+        <a href="#" class="nav-item" data-view="finanzas">${icon('money')}<span>Finanzas</span></a>`;
     } else {
       nav.innerHTML = `
         <a href="#" class="nav-item" data-view="inicio">${icon('trophy')}<span>Inicio</span></a>
@@ -820,6 +821,7 @@ const App = (() => {
             <button class="btn btn-fantasma btn-sm" id="btn-editar-socio">${icon('edit')} Editar</button>
             <button class="btn-icono btn-icono-peligro" id="btn-borrar-socio" title="Eliminar socio">${icon('trash')}</button>
           </div>
+          <button class="btn btn-fantasma btn-full" id="btn-ficha-completa-socio" style="margin-top:.6rem">${icon('routine')} Rutina, progreso y QR</button>
           <button class="btn ${yaAsistio ? 'btn-fantasma' : 'btn-primario'} btn-full" id="btn-marcar-asistencia" style="margin-top:1rem" ${yaAsistio ? 'disabled' : ''}>
             ${yaAsistio ? `${icon('check-circle')} Ya registró su entrada hoy` : `${icon('check')} Marcar entrada de hoy`}
           </button>
@@ -839,6 +841,10 @@ const App = (() => {
         });
       });
       $('#btn-editar-socio').addEventListener('click', () => abrirModalNuevoSocio(miembro.dni, () => buscar(), miembro));
+      $('#btn-ficha-completa-socio').addEventListener('click', () => {
+        state.dniSeleccionado = miembro.dni;
+        cambiarVista('ficha-socio');
+      });
       $('#btn-borrar-socio').addEventListener('click', async () => {
         if (!confirm(`¿Eliminar a ${miembro.nombre} (DNI ${miembro.dni})? Esta acción no se puede deshacer.`)) return;
         await FirebaseService.eliminarMiembro(miembro.dni);
@@ -923,6 +929,398 @@ const App = (() => {
     cargarAsistenciasDeHoy();
   }
   RENDERERS['recepcion'] = renderRecepcion;
+
+  // ---------------------------------------------------------------------
+  // Helpers de rango de fechas, compartidos por Finanzas y por el
+  // progreso de un socio (mes actual día por día / trimestre-6 meses-año
+  // agrupado por mes).
+  // ---------------------------------------------------------------------
+  function bucketsPorRango(rango) {
+    const hoy = new Date();
+    if (rango === 'mes') {
+      const anio = hoy.getFullYear(), mes = hoy.getMonth();
+      const totalDias = new Date(anio, mes + 1, 0).getDate();
+      const buckets = [];
+      for (let d = 1; d <= totalDias; d++) {
+        buckets.push({ desde: new Date(anio, mes, d, 0, 0, 0, 0), hasta: new Date(anio, mes, d, 23, 59, 59, 999), label: String(d) });
+      }
+      return buckets;
+    }
+    const mesesCant = rango === 'trimestre' ? 3 : rango === '6meses' ? 6 : 12;
+    const buckets = [];
+    for (let i = mesesCant - 1; i >= 0; i--) {
+      const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+      buckets.push({
+        desde: new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0),
+        hasta: new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999),
+        label: `${(MESES[d.getMonth()] || '').slice(0, 3)} '${String(d.getFullYear()).slice(2)}`
+      });
+    }
+    return buckets;
+  }
+
+  function sumarEnRango(items, desde, hasta, campoFecha, campoMonto) {
+    return items.reduce((acc, it) => {
+      const f = new Date(it[campoFecha]);
+      return (f >= desde && f <= hasta) ? acc + (Number(it[campoMonto]) || 0) : acc;
+    }, 0);
+  }
+
+  function fechaDesdeInputLocal(valorInput) {
+    // Igual criterio que ya usamos en otros lados: nunca construir la
+    // fecha con new Date("YYYY-MM-DD") a secas (se interpreta como
+    // medianoche UTC y en Argentina cae un día antes) — se arma con los
+    // componentes locales, a mediodía para más margen todavía.
+    const [anio, mes, dia] = (valorInput || '').split('-').map(Number);
+    return (anio && mes && dia) ? new Date(anio, mes - 1, dia, 12, 0, 0).toISOString() : new Date().toISOString();
+  }
+
+  const chartsPorId = {};
+  function renderGraficoConRango(canvasId, historial, rango) {
+    const canvas = $(`#${canvasId}`);
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (chartsPorId[canvasId]) chartsPorId[canvasId].destroy();
+    const buckets = bucketsPorRango(rango);
+    const valores = buckets.map(b => sumarEnRango(historial, b.desde, b.hasta, 'fecha', 'volumenTotal'));
+    chartsPorId[canvasId] = new Chart(canvas.getContext('2d'), {
+      type: rango === 'mes' ? 'line' : 'bar',
+      data: { labels: buckets.map(b => b.label), datasets: [{ label: 'Volumen (kg)', data: valores, borderColor: MARCA.colorAcento, backgroundColor: MARCA.colorAcento + (rango === 'mes' ? '33' : 'CC'), fill: rango === 'mes', tension: .3 }] },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+  }
+
+  function renderGraficoFinanzas(canvasId, pagos, gastos, rango) {
+    const canvas = $(`#${canvasId}`);
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (chartsPorId[canvasId]) chartsPorId[canvasId].destroy();
+    const buckets = bucketsPorRango(rango);
+    chartsPorId[canvasId] = new Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: buckets.map(b => b.label),
+        datasets: [
+          { label: 'Ingresos', data: buckets.map(b => sumarEnRango(pagos, b.desde, b.hasta, 'fecha', 'monto')), backgroundColor: MARCA.colorAcento },
+          { label: 'Gastos', data: buckets.map(b => sumarEnRango(gastos, b.desde, b.hasta, 'fecha', 'monto')), backgroundColor: '#E05B5B' }
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+  }
+
+  // =======================================================================
+  // FINANZAS (entrenador) — modelo simple de un solo dueño: los ingresos
+  // se calculan solos a partir de los pagos que ya se registran en
+  // Recepción, los gastos se cargan a mano.
+  // =======================================================================
+  async function renderFinanzas() {
+    const cont = $('#view-finanzas');
+    cont.innerHTML = `<p class="texto-suave">Cargando...</p>`;
+    const [pagosRes, gastosRes] = await Promise.allSettled([
+      FirebaseService.getPagosDeAlumnos(),
+      FirebaseService.listarGastos()
+    ]);
+    const pagos = pagosRes.status === 'fulfilled' ? pagosRes.value : [];
+    const gastos = gastosRes.status === 'fulfilled' ? gastosRes.value : [];
+    if (pagosRes.status === 'rejected') console.error('Error cargando pagos:', pagosRes.reason);
+    if (gastosRes.status === 'rejected') console.error('Error cargando gastos:', gastosRes.reason);
+
+    const hoy = new Date();
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1, 0, 0, 0, 0);
+    const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0, 23, 59, 59, 999);
+    const ingresosMes = sumarEnRango(pagos, inicioMes, finMes, 'fecha', 'monto');
+    const gastosMes = sumarEnRango(gastos, inicioMes, finMes, 'fecha', 'monto');
+    const balanceMes = ingresosMes - gastosMes;
+
+    cont.innerHTML = `
+      <div class="panel-header"><h2>${icon('money')} Finanzas</h2><p class="texto-suave">Los ingresos se calculan solos a partir de las cuotas registradas en Recepción. Los gastos se cargan a mano acá abajo.</p></div>
+
+      <div class="grid-cards-resumen" style="grid-template-columns:repeat(3,1fr)">
+        <div class="card-stat exito"><div class="card-stat-icono">${icon('arrow-up')}</div><div class="card-stat-valor">$${formatNumero(ingresosMes)}</div><div class="card-stat-label">Ingresos del mes</div></div>
+        <div class="card-stat"><div class="card-stat-icono">${icon('arrow-down')}</div><div class="card-stat-valor">$${formatNumero(gastosMes)}</div><div class="card-stat-label">Gastos del mes</div></div>
+        <div class="card-stat ${balanceMes >= 0 ? 'exito' : ''}"><div class="card-stat-icono">${icon('stats')}</div><div class="card-stat-valor">$${formatNumero(balanceMes)}</div><div class="card-stat-label">Balance del mes</div></div>
+      </div>
+
+      <div class="panel-header-flex" style="margin-top:1.2rem">
+        <h3>Ingresos vs gastos</h3>
+        <select id="select-rango-finanzas">
+          <option value="mes">Este mes</option>
+          <option value="trimestre">Último trimestre</option>
+          <option value="6meses" selected>Últimos 6 meses</option>
+          <option value="anual">Último año</option>
+        </select>
+      </div>
+      <div class="contenedor-grafico" style="margin-top:.8rem"><canvas id="grafico-finanzas"></canvas></div>
+
+      <div class="panel-header-flex" style="margin-top:1.2rem"><h3>Gastos</h3></div>
+      <div class="panel" style="margin-bottom:1rem">
+        <div class="campo-fila">
+          <label class="campo" style="flex:1"><span>Descripción</span><input type="text" id="input-gasto-descripcion" placeholder="Ej: Alquiler, luz, mantenimiento..."></label>
+          <label class="campo"><span>Monto</span><input type="number" min="0" step="1" id="input-gasto-monto" style="width:8rem"></label>
+          <label class="campo"><span>Fecha</span><input type="date" id="input-gasto-fecha" value="${hoy.toISOString().slice(0, 10)}"></label>
+          <button class="btn btn-primario" id="btn-agregar-gasto" style="align-self:flex-end">${icon('plus')} Agregar</button>
+        </div>
+      </div>
+      <div id="lista-gastos"></div>
+    `;
+
+    renderGraficoFinanzas('grafico-finanzas', pagos, gastos, '6meses');
+    $('#select-rango-finanzas').addEventListener('change', (e) => renderGraficoFinanzas('grafico-finanzas', pagos, gastos, e.target.value));
+
+    function pintarListaGastos(lista) {
+      const c = $('#lista-gastos');
+      c.innerHTML = lista.length ? lista
+        .slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+        .map(g => `<div class="fila-historial"><div class="fila-historial-info"><strong>${escapeHtml(g.descripcion || 'Gasto')}</strong><span class="texto-suave">${formatFecha(g.fecha)}</span></div><div style="display:flex;align-items:center;gap:.6rem"><span>$${formatNumero(g.monto)}</span><button class="btn-icono btn-icono-peligro" data-borrar-gasto="${g.id}" title="Borrar gasto">${icon('trash')}</button></div></div>`).join('')
+        : `<p class="texto-suave estado-vacio">Todavía no cargaste ningún gasto.</p>`;
+      $$('[data-borrar-gasto]', c).forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('¿Borrar este gasto? Esta acción no se puede deshacer.')) return;
+        await FirebaseService.eliminarGasto(b.dataset.borrarGasto);
+        toast('Gasto borrado.', 'exito');
+        renderFinanzas();
+      }));
+    }
+    pintarListaGastos(gastos);
+
+    $('#btn-agregar-gasto').addEventListener('click', async () => {
+      const descripcion = $('#input-gasto-descripcion').value.trim();
+      const monto = Number($('#input-gasto-monto').value);
+      if (!monto || monto <= 0) { toast('Ingresá un monto válido.', 'error'); return; }
+      const fecha = fechaDesdeInputLocal($('#input-gasto-fecha').value);
+      await FirebaseService.agregarGasto({ descripcion, monto, fecha, categoria: 'General' });
+      toast('Gasto agregado.', 'exito');
+      renderFinanzas();
+    });
+  }
+  RENDERERS['finanzas'] = renderFinanzas;
+
+  // =======================================================================
+  // FICHA DE SOCIO (entrenador) — rutina, progreso y QR de un socio de
+  // Recepción. Reutiliza el mismo editor de rutina que un alumno, pero
+  // apuntado a rutinasGym/{dni} en vez de rutinas/{uid}.
+  // =======================================================================
+  async function renderFichaSocio() {
+    const cont = $('#view-ficha-socio');
+    const dni = state.dniSeleccionado;
+    if (!dni) { cambiarVista('recepcion'); return; }
+    cont.innerHTML = `<p class="texto-suave">Cargando ficha...</p>`;
+
+    const [miembroRes, rutinaRes, historialRes] = await Promise.allSettled([
+      FirebaseService.buscarMiembroPorDni(dni),
+      FirebaseService.getRutinaGym(dni),
+      FirebaseService.getHistorialGym(dni)
+    ]);
+    if (miembroRes.status === 'rejected' || !miembroRes.value) {
+      cont.innerHTML = `<p class="texto-suave estado-vacio">No se pudo cargar este socio (error de permisos o de conexión). Volvé e intentá de nuevo.</p><button class="btn btn-fantasma" id="btn-volver-recepcion-error">${icon('chevron-left')} Volver</button>`;
+      $('#btn-volver-recepcion-error')?.addEventListener('click', () => cambiarVista('recepcion'));
+      if (miembroRes.status === 'rejected') console.error('Error cargando socio:', miembroRes.reason);
+      return;
+    }
+    const miembro = miembroRes.value;
+    const rutina = rutinaRes.status === 'fulfilled' ? rutinaRes.value : null;
+    const historial = (historialRes.status === 'fulfilled' ? historialRes.value : []).sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+    if (rutinaRes.status === 'rejected') console.error('Error cargando rutina del socio:', rutinaRes.reason);
+    if (historialRes.status === 'rejected') console.error('Error cargando historial del socio:', historialRes.reason);
+
+    const nombreCompleto = [miembro.nombre, miembro.apellido].filter(Boolean).join(' ');
+
+    cont.innerHTML = `
+      <div class="panel-header">
+        <button class="btn btn-fantasma btn-sm" id="btn-volver-recepcion">${icon('chevron-left')} Recepción</button>
+        <h2 style="margin-top:.5rem">${escapeHtml(nombreCompleto)}</h2>
+        <p class="texto-suave">DNI ${escapeHtml(miembro.dni)} · ${MODALIDADES_GYM[miembro.modalidad] || miembro.modalidad}</p>
+      </div>
+
+      <div class="grid-cards-resumen" style="grid-template-columns:repeat(2,1fr)">
+        <div class="card-stat"><div class="card-stat-icono">${icon('history')}</div><div class="card-stat-valor">${historial.length}</div><div class="card-stat-label">Cargas registradas</div></div>
+        <div class="card-stat exito"><div class="card-stat-icono">${icon('stats')}</div><div class="card-stat-valor">${formatNumero(historial.length ? historial[historial.length - 1].volumenTotal : 0)}</div><div class="card-stat-label">Volumen última carga (kg)</div></div>
+      </div>
+
+      <div class="panel-header-flex" style="margin-top:1.2rem">
+        <h3>Progreso (volumen total por período)</h3>
+        <select id="select-rango-progreso-socio">
+          <option value="mes">Este mes</option>
+          <option value="trimestre">Último trimestre</option>
+          <option value="6meses">Últimos 6 meses</option>
+          <option value="anual">Último año</option>
+        </select>
+      </div>
+      <div class="contenedor-grafico" style="margin-top:.8rem"><canvas id="grafico-progreso-socio"></canvas></div>
+
+      <div class="panel-header-flex" style="margin-top:1.2rem"><h3>Rutina asignada</h3>
+        <div style="display:flex;gap:.5rem">
+          ${rutina ? `<button class="btn btn-fantasma btn-sm" id="btn-generar-qr-socio">${icon('qr')} QR de la rutina</button>` : ''}
+          ${rutina ? `<button class="btn btn-peligro btn-sm" id="btn-borrar-rutina-socio">${icon('close')} Borrar rutina</button>` : ''}
+        </div>
+      </div>
+      <div id="dias-rutina-socio"></div>
+      ${rutina ? `<button class="btn btn-fantasma" id="btn-agregar-dia-socio">${icon('plus')} Agregar día</button>` : `
+        <div class="panel" style="margin-top:.8rem">
+          <p class="texto-suave" style="margin-bottom:.8rem">Este socio todavía no tiene rutina. Elegí un objetivo para generar una.</p>
+          <div class="grid-objetivos-inicio" id="picker-objetivo-socio"></div>
+        </div>`}
+
+      ${rutina && rutina.dias.length ? `
+        <div class="panel" style="margin-top:1.2rem">
+          <h3>${icon('stats')} Registrar cargas de hoy</h3>
+          <p class="texto-suave texto-pequeno" style="margin:.3rem 0 .8rem">Cargá lo que hizo hoy para que quede en el historial de progreso.</p>
+          <div class="campo-fila">
+            <label class="campo" style="flex:1"><span>Día</span><select id="select-dia-carga">${rutina.dias.map((d, di) => `<option value="${di}">${escapeHtml(d.nombre)}</option>`).join('')}</select></label>
+            <button class="btn btn-primario" id="btn-abrir-carga" style="align-self:flex-end">${icon('plus')} Registrar</button>
+          </div>
+        </div>` : ''}
+    `;
+
+    $('#btn-volver-recepcion').addEventListener('click', () => cambiarVista('recepcion'));
+
+    const opcionesRutinaSocio = { guardar: (id, r) => FirebaseService.guardarRutinaGym(id, r), contenedorId: 'dias-rutina-socio' };
+
+    if (!rutina) {
+      $('#picker-objetivo-socio').innerHTML = Object.entries(PROGRAMAS_OBJETIVO).map(([key, p]) => `
+        <button class="tarjeta-objetivo-grande" data-objetivo="${key}">
+          <span class="tarjeta-objetivo-grande-icono">${icon(p.icono)}</span>
+          <span class="tarjeta-objetivo-grande-nombre">${escapeHtml(p.nombre)}</span>
+        </button>`).join('');
+      $$('#picker-objetivo-socio [data-objetivo]').forEach(b => b.addEventListener('click', () => elegirObjetivoParaRutinaSocio(dni, b.dataset.objetivo)));
+    } else {
+      renderDiasRutina(dni, rutina, true, false, opcionesRutinaSocio);
+      $('#btn-agregar-dia-socio').addEventListener('click', async () => {
+        rutina.dias.push({ id: `dia-${Date.now()}`, nombre: `Día ${rutina.dias.length + 1}`, ejercicios: [] });
+        await FirebaseService.guardarRutinaGym(dni, rutina);
+        renderFichaSocio();
+      });
+      $('#btn-borrar-rutina-socio').addEventListener('click', async () => {
+        if (!confirm(`¿Borrar toda la rutina de ${nombreCompleto}? Esta acción no se puede deshacer.`)) return;
+        await FirebaseService.eliminarRutinaGym(dni);
+        toast('Rutina borrada.', 'exito');
+        renderFichaSocio();
+      });
+      $('#btn-generar-qr-socio').addEventListener('click', () => abrirModalQrRutinaSocio(miembro, rutina));
+      $('#btn-abrir-carga')?.addEventListener('click', () => {
+        const di = Number($('#select-dia-carga').value);
+        abrirModalRegistrarCarga(miembro, rutina, di, () => renderFichaSocio());
+      });
+    }
+
+    renderGraficoConRango('grafico-progreso-socio', historial, 'mes');
+    $('#select-rango-progreso-socio').addEventListener('change', (e) => renderGraficoConRango('grafico-progreso-socio', historial, e.target.value));
+  }
+  RENDERERS['ficha-socio'] = renderFichaSocio;
+
+  async function elegirObjetivoParaRutinaSocio(dni, objetivoKey) {
+    if (objetivoKey === 'libre') {
+      const rutina = { nombre: 'Rutina libre', objetivo: 'libre', nivel: null, dias: [], calentamiento: [] };
+      await FirebaseService.guardarRutinaGym(dni, rutina);
+      toast('Rutina en blanco creada. Agregá los días que quieras.', 'exito');
+      renderFichaSocio();
+      return;
+    }
+    const p = PROGRAMAS_OBJETIVO[objetivoKey];
+    abrirModal(`
+      <div class="modal-header"><h3>${icon(p.icono)} ${escapeHtml(p.nombre)}</h3><button data-cerrar-modal class="btn-icono">${icon('close')}</button></div>
+      <div class="modal-body">
+        ${p.frecuencia ? `<span class="badge" style="margin-bottom:.7rem;display:inline-block">${escapeHtml(p.frecuencia)}</span>` : ''}
+        ${p.resumen ? `<p class="texto-suave" style="margin-bottom:.9rem">${escapeHtml(p.resumen)}</p>` : ''}
+        <p class="texto-suave" style="margin-bottom:1rem">Elegí el nivel para generar la rutina de este socio.</p>
+        <div class="lista-niveles">
+          ${['Principiante', 'Intermedio', 'Avanzado'].map((n, i) => `
+            <label class="opcion-nivel"><input type="radio" name="nivel" value="${n}" ${i === 0 ? 'checked' : ''}><div><strong>${n}</strong></div></label>`).join('')}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-fantasma" data-cerrar-modal>Cancelar</button>
+        <button class="btn btn-primario" id="btn-confirmar-nivel-socio">${icon('plus')} Generar rutina</button>
+      </div>`, { ancho: 'lg', id: 'modal-nivel-socio' });
+
+    $('#btn-confirmar-nivel-socio').addEventListener('click', async () => {
+      const nivel = $('input[name="nivel"]:checked').value;
+      const rutina = generarRutinaDesdeObjetivo(objetivoKey, nivel);
+      await FirebaseService.guardarRutinaGym(dni, rutina);
+      cerrarModal();
+      toast('Rutina generada y asignada.', 'logro');
+      renderFichaSocio();
+    });
+  }
+
+  function abrirModalRegistrarCarga(miembro, rutina, di, alGuardar) {
+    const dia = rutina.dias[di];
+    const ejerciciosValidos = dia.ejercicios.map((item, ei) => ({ item, ei, ej: getExerciseById(item.ejercicioId) })).filter(x => x.ej);
+    abrirModal(`
+      <div class="modal-header"><h3>${icon('stats')} Cargas — ${escapeHtml(dia.nombre)}</h3><button data-cerrar-modal class="btn-icono">${icon('close')}</button></div>
+      <div class="modal-body">
+        <label class="campo"><span>Fecha</span><input type="date" id="input-fecha-carga" value="${new Date().toISOString().slice(0, 10)}"></label>
+        ${ejerciciosValidos.map(({ item, ei, ej }) => `
+          <div class="bloque-dia" style="margin-top:.8rem">
+            <div class="dia-header"><strong>${escapeHtml(ej.nombre)}</strong></div>
+            <div class="lista-ejercicios-dia">
+              ${item.seriesObjetivo.map((serie, si) => `
+                <div class="fila-ejercicio-dia">
+                  <div class="fila-ejercicio-dia-info" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                    <span class="texto-suave texto-pequeno" style="width:4rem">Serie ${si + 1}</span>
+                    <input type="number" min="0" step="1" placeholder="Reps" data-reps="${ei}:${si}" value="${serie.reps || ''}" style="width:5rem">
+                    <input type="number" min="0" step="0.5" placeholder="Kg" data-peso="${ei}:${si}" value="${serie.peso || ''}" style="width:5rem">
+                  </div>
+                </div>`).join('')}
+            </div>
+          </div>`).join('') || '<p class="texto-suave texto-pequeno" style="margin-top:.8rem">Este día no tiene ejercicios cargados todavía.</p>'}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-fantasma" data-cerrar-modal>Cancelar</button>
+        <button class="btn btn-primario" id="btn-guardar-carga">${icon('check')} Guardar</button>
+      </div>`, { ancho: 'lg', id: 'modal-registrar-carga' });
+
+    $('#btn-guardar-carga').addEventListener('click', async () => {
+      const ejerciciosSesion = ejerciciosValidos.map(({ item, ei, ej }) => ({
+        ejercicioId: ej.id, nombre: ej.nombre,
+        series: item.seriesObjetivo.map((_, si) => ({
+          reps: Number($(`[data-reps="${ei}:${si}"]`)?.value) || 0,
+          peso: Number($(`[data-peso="${ei}:${si}"]`)?.value) || 0
+        }))
+      }));
+      const fecha = fechaDesdeInputLocal($('#input-fecha-carga').value);
+      await FirebaseService.agregarCargaGym(miembro.dni, { diaNombre: dia.nombre, ejercicios: ejerciciosSesion, fecha });
+      cerrarModal();
+      toast('Cargas registradas.', 'exito');
+      alGuardar();
+    });
+  }
+
+  function abrirModalQrRutinaSocio(miembro, rutina) {
+    const nombreCompleto = [miembro.nombre, miembro.apellido].filter(Boolean).join(' ');
+    abrirModal(`
+      <div class="modal-header"><h3>${icon('qr')} QR de la rutina</h3><button data-cerrar-modal class="btn-icono">${icon('close')}</button></div>
+      <div class="modal-body" id="cuerpo-modal-qr"><p class="texto-suave">Generando...</p></div>
+      <div class="modal-footer">
+        <button class="btn btn-fantasma" data-cerrar-modal>Cerrar</button>
+        <button class="btn btn-primario" id="btn-regenerar-qr">${icon('repeat')} Generar nuevo (invalida el anterior)</button>
+      </div>`, { ancho: 'md', id: 'modal-qr-socio' });
+
+    async function pintar(regenerar) {
+      const cuerpo = $('#cuerpo-modal-qr');
+      cuerpo.innerHTML = `<p class="texto-suave">Generando...</p>`;
+      try {
+        const token = await FirebaseService.publicarRutinaGym(miembro.dni, nombreCompleto, rutina, regenerar ? null : miembro.tokenQR);
+        miembro.tokenQR = token;
+        const url = new URL(`rutina.html?token=${token}`, window.location.href).href;
+        const qr = qrcode(0, 'M');
+        qr.addData(url);
+        qr.make();
+        cuerpo.innerHTML = `
+          <div style="text-align:center">${qr.createSvgTag(6, 8)}</div>
+          <p class="texto-suave texto-pequeno" style="margin-top:.8rem;word-break:break-all">${escapeHtml(url)}</p>
+          <button class="btn btn-fantasma btn-full" id="btn-copiar-link-qr" style="margin-top:.6rem">${icon('save')} Copiar link</button>
+          <p class="texto-suave texto-pequeno" style="margin-top:.6rem">Cualquiera con este link o QR ve la rutina de ${escapeHtml(nombreCompleto)} sin loguearse. Se actualiza sola cada vez que la vuelvas a abrir.</p>`;
+        $('#btn-copiar-link-qr').addEventListener('click', () => {
+          navigator.clipboard?.writeText(url).then(() => toast('Link copiado.', 'exito')).catch(() => toast('No se pudo copiar. Copiá el link manualmente.', 'error'));
+        });
+      } catch (e) {
+        console.error('Error generando QR:', e);
+        cuerpo.innerHTML = `<p class="texto-suave estado-vacio">No se pudo generar el QR (error de conexión o permisos). Cerrá esto e intentá de nuevo.</p>`;
+      }
+    }
+
+    $('#btn-regenerar-qr').addEventListener('click', () => pintar(true));
+    pintar(false);
+  }
 
   // ---------------------------------------------------------------------
   // Modo kiosco / autoservicio: pantalla para dejar en una tablet/compu
@@ -1305,7 +1703,13 @@ const App = (() => {
     });
   }
 
-  function abrirModalEditarSeriesObjetivo(uid, rutina, di, ei, esEntrenadorEditando) {
+  // Nota: antes de este cambio, esta función usaba una variable
+  // "permiteEmpezar" que nunca le llegaba como parámetro (bug latente,
+  // tiraba ReferenceError al guardar desde este modal en algunos casos).
+  // Ahora se recibe explícitamente, junto con "opciones" para reutilizar
+  // este mismo editor en rutinas de socios de gimnasio.
+  function abrirModalEditarSeriesObjetivo(uid, rutina, di, ei, esEntrenadorEditando, permiteEmpezar, opciones = {}) {
+    const guardar = opciones.guardar || ((id, r) => FirebaseService.guardarRutina(id, r));
     const item = rutina.dias[di].ejercicios[ei];
     const ej = getExerciseById(item.ejercicioId);
     if (!ej) return;
@@ -1328,16 +1732,21 @@ const App = (() => {
       const peso = Math.max(0, Number($('#input-peso-obj').value) || 0);
       item.seriesObjetivo = Array.from({ length: n }, () => ({ reps, peso }));
       item.descansoSeg = Math.max(0, Number($('#input-descanso-obj').value) || 90);
-      await FirebaseService.guardarRutina(uid, rutina);
+      await guardar(uid, rutina);
       cerrarModal();
       toast('Ejercicio actualizado.', 'exito');
-      renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar);
+      renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar, opciones);
     });
   }
 
 
-  function renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar) {
-    const cont = $('#dias-rutina-alumno');
+  // "opciones.guardar" y "opciones.contenedorId" dejan reutilizar este
+  // mismo editor para las rutinas de socios de gimnasio (rutinasGym/{dni})
+  // sin duplicar toda la lógica — por defecto se comporta exactamente
+  // igual que antes (rutinas/{alumnoUid} de un alumno con cuenta).
+  function renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar, opciones = {}) {
+    const guardar = opciones.guardar || ((id, r) => FirebaseService.guardarRutina(id, r));
+    const cont = $(`#${opciones.contenedorId || 'dias-rutina-alumno'}`);
     if (!rutina) { cont.innerHTML = `<p class="texto-suave estado-vacio">Este alumno todavía no tiene una rutina asignada. Elegí un objetivo arriba para generar una.</p>`; return; }
     cont.innerHTML = rutina.dias.map((dia, di) => `
       <div class="bloque-dia">
@@ -1370,7 +1779,7 @@ const App = (() => {
     $$('[data-empezar-dia]', cont).forEach(b => b.addEventListener('click', () => iniciarEntrenamiento(rutina, rutina.dias[Number(b.dataset.empezarDia)])));
     $$('[data-editar-series]', cont).forEach(b => b.addEventListener('click', () => {
       const [di, ei] = b.dataset.editarSeries.split(':').map(Number);
-      abrirModalEditarSeriesObjetivo(uid, rutina, di, ei, esEntrenadorEditando);
+      abrirModalEditarSeriesObjetivo(uid, rutina, di, ei, esEntrenadorEditando, permiteEmpezar, opciones);
     }));
     $$('[data-agregar-ej]', cont).forEach(b => b.addEventListener('click', () => {
       abrirSelectorEjercicios(async (ej) => {
@@ -1378,31 +1787,31 @@ const App = (() => {
           id: `ej-${Date.now()}`, ejercicioId: ej.id,
           seriesObjetivo: [{ reps: 10, peso: 0 }, { reps: 10, peso: 0 }, { reps: 10, peso: 0 }], descansoSeg: 90
         });
-        await FirebaseService.guardarRutina(uid, rutina);
-        renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar);
+        await guardar(uid, rutina);
+        renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar, opciones);
         toast(`${ej.nombre} agregado.`, 'exito');
       });
     }));
     $$('[data-quitar-ej]', cont).forEach(b => b.addEventListener('click', async () => {
       const [di, ei] = b.dataset.quitarEj.split(':').map(Number);
       rutina.dias[di].ejercicios.splice(ei, 1);
-      await FirebaseService.guardarRutina(uid, rutina);
-      renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar);
+      await guardar(uid, rutina);
+      renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar, opciones);
     }));
     $$('[data-renombrar-dia]', cont).forEach(b => b.addEventListener('click', async () => {
       const di = Number(b.dataset.renombrarDia);
       const nuevoNombre = prompt('Nuevo nombre para este día:', rutina.dias[di].nombre);
       if (nuevoNombre === null || !nuevoNombre.trim()) return;
       rutina.dias[di].nombre = nuevoNombre.trim();
-      await FirebaseService.guardarRutina(uid, rutina);
-      renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar);
+      await guardar(uid, rutina);
+      renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar, opciones);
     }));
     $$('[data-borrar-dia]', cont).forEach(b => b.addEventListener('click', async () => {
       const di = Number(b.dataset.borrarDia);
       if (!confirm(`¿Borrar "${rutina.dias[di].nombre}"? Esta acción no se puede deshacer.`)) return;
       rutina.dias.splice(di, 1);
-      await FirebaseService.guardarRutina(uid, rutina);
-      renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar);
+      await guardar(uid, rutina);
+      renderDiasRutina(uid, rutina, esEntrenadorEditando, permiteEmpezar, opciones);
       toast('Día borrado.', 'exito');
     }));
   }

@@ -8,12 +8,13 @@
  * que los datos de alumnos, rutinas y entrenamientos siempre estén al día.
  */
 
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const CACHE_SHELL = `tomicoach-shell-${CACHE_VERSION}`;
 
 const APP_SHELL = [
   './',
   './index.html',
+  './rutina.html',
   './manifest.json',
   './css/style.css',
   './js/marca.js',
@@ -21,6 +22,8 @@ const APP_SHELL = [
   './js/firebase-config.js',
   './js/firebase-service.js',
   './js/timer.js',
+  './js/qrcode.js',
+  './js/rutina-publica.js',
   './js/app.js',
   './assets/iconos/sprite.svg',
   './assets/iconos/poses.svg',

@@ -444,6 +444,113 @@ const FirebaseService = (() => {
     return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => new Date(a.fecha).getTime() >= hoy);
   }
 
+  // ---------------------------------------------------------------------
+  // Rutinas de socios de gimnasio (rutinasGym/{dni}) — mismo formato que
+  // "rutinas" de alumnos ({ nombre, dias:[...] }), pero el documento se
+  // indexa por DNI en vez de por uid, porque un socio de Recepción no
+  // tiene cuenta de login.
+  // ---------------------------------------------------------------------
+  async function getRutinaGym(dni) {
+    const doc = await db.collection('rutinasGym').doc(String(dni).trim()).get();
+    return doc.exists ? doc.data() : null;
+  }
+
+  async function guardarRutinaGym(dni, rutina) {
+    rutina.actualizada = new Date().toISOString();
+    rutina.entrenadorId = usuarioActual.uid;
+    await db.collection('rutinasGym').doc(String(dni).trim()).set(rutina);
+    return rutina;
+  }
+
+  async function eliminarRutinaGym(dni) {
+    await db.collection('rutinasGym').doc(String(dni).trim()).delete();
+  }
+
+  // ---------------------------------------------------------------------
+  // Cargas de un socio (entrenamientosGym) — historial de repeticiones y
+  // peso, para el gráfico de progreso. A diferencia de "entrenamientos"
+  // (que arma el propio alumno en una sesión guiada con timer), esto lo
+  // carga el entrenador/recepción como registro rápido de lo que hizo el
+  // socio ese día — no hay sesión guiada para el modelo de Recepción.
+  // ---------------------------------------------------------------------
+  async function agregarCargaGym(dni, sesion) {
+    sesion.dni = String(dni).trim();
+    sesion.entrenadorId = usuarioActual.uid;
+    sesion.fecha = sesion.fecha || new Date().toISOString();
+    sesion.volumenTotal = (sesion.ejercicios || []).reduce((total, ej) =>
+      total + (ej.series || []).reduce((s, serie) => s + (Number(serie.peso) || 0) * (Number(serie.reps) || 0), 0), 0);
+    const ref = await db.collection('entrenamientosGym').add(sesion);
+    return { id: ref.id, ...sesion };
+  }
+
+  async function getHistorialGym(dni) {
+    if (!usuarioActual) return [];
+    const snap = await db.collection('entrenamientosGym')
+      .where('entrenadorId', '==', usuarioActual.uid)
+      .where('dni', '==', String(dni).trim())
+      .get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+
+  // ---------------------------------------------------------------------
+  // Finanzas — Gastos manuales (gastosGym). Los INGRESOS no se guardan
+  // en una colección aparte: se calculan sumando "pagos" (con
+  // getPagosDeAlumnos, sin filtrar alumnoUid trae TODOS los pagos de
+  // este entrenador, sean de alumnos o de socios de gimnasio), así nunca
+  // quedan desincronizados de lo que ya se cobra en Recepción.
+  // ---------------------------------------------------------------------
+  async function listarGastos() {
+    if (!usuarioActual) return [];
+    const snap = await db.collection('gastosGym').where('entrenadorId', '==', usuarioActual.uid).get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+
+  async function agregarGasto({ monto, categoria, descripcion, fecha }) {
+    const datos = {
+      entrenadorId: usuarioActual.uid,
+      monto: Number(monto) || 0,
+      categoria: categoria || 'Otro',
+      descripcion: descripcion || '',
+      fecha: fecha || new Date().toISOString()
+    };
+    const ref = await db.collection('gastosGym').add(datos);
+    return { id: ref.id, ...datos };
+  }
+
+  async function eliminarGasto(id) {
+    await db.collection('gastosGym').doc(id).delete();
+  }
+
+  // ---------------------------------------------------------------------
+  // Rutina pública por QR (rutinasPublicas/{token}) — copia de solo
+  // lectura de la rutina de un socio, para verla sin loguearse. El token
+  // es un id largo al azar (16 bytes → 32 caracteres hex): la seguridad
+  // depende de que sea imposible de adivinar y de que "list" esté
+  // bloqueado en las reglas, no de que esté "escondido".
+  // ---------------------------------------------------------------------
+  function generarToken() {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function publicarRutinaGym(dni, nombreSocio, rutina, tokenExistente) {
+    const token = tokenExistente || generarToken();
+    await db.collection('rutinasPublicas').doc(token).set({
+      dni: String(dni).trim(),
+      entrenadorId: usuarioActual.uid,
+      nombreSocio: nombreSocio || '',
+      rutina,
+      actualizada: new Date().toISOString()
+    });
+    await db.collection('miembrosGym').doc(String(dni).trim()).update({ tokenQR: token });
+    return token;
+  }
+
+  async function getRutinaPublica(token) {
+    const doc = await db.collection('rutinasPublicas').doc(token).get();
+    return doc.exists ? doc.data() : null;
+  }
+
   return {
     init, configurado,
     resolverCodigo,
@@ -454,6 +561,10 @@ const FirebaseService = (() => {
     agregarEntrenamiento, getHistorial,
     registrarPago, marcarCuotaVencida, getPagosDeAlumnos, getPagosDeEntrenadores, eliminarPago,
     buscarMiembroPorDni, registrarMiembro, actualizarMiembro, eliminarMiembro, listarMiembros, borrarTodosLosSocios,
-    yaAsistioHoy, marcarAsistencia, getAsistenciasDeHoy
+    yaAsistioHoy, marcarAsistencia, getAsistenciasDeHoy,
+    getRutinaGym, guardarRutinaGym, eliminarRutinaGym,
+    agregarCargaGym, getHistorialGym,
+    listarGastos, agregarGasto, eliminarGasto,
+    publicarRutinaGym, getRutinaPublica
   };
 })();

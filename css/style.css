@@ -72,6 +72,16 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
+/* Base para CUALQUIER input/select/textarea "suelto" (sin envolver en
+   .campo o .filtros-fila) — así nunca vuelve a quedar con el fondo
+   blanco nativo del navegador sobre el tema oscuro. .campo/.filtros-fila
+   son más específicos y siguen ganando donde ya estaban definidos. */
+input, select, textarea {
+  font-family: inherit; color: var(--color-texto); background: var(--color-fondo-elevado);
+  border: 1px solid var(--color-borde); border-radius: var(--radio-sm); padding: .6rem .75rem; font-size: .9rem;
+}
+input[type="checkbox"], input[type="radio"] { background: none; border: none; padding: 0; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--color-acento); }
 h1, h2, h3, h4 { font-family: var(--fuente-display); font-weight: 600; margin: 0 0 .4em; letter-spacing: -.01em; }
 p { margin: 0 0 .8em; }
 ul { margin: 0 0 .8em; padding-left: 1.2em; }
@@ -331,6 +341,25 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 }
 .campo input:focus, .campo select:focus, .campo textarea:focus { border-color: var(--color-acento); }
 .campo-fila { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+
+/* Fila de carga de una serie (usada al registrar pesos/reps reales) —
+   antes eran dos inputs sueltos sin etiqueta ("doble blanco"); ahora cada
+   serie es una fila prolija con número de serie + campos chicos con
+   etiqueta propia (Reps / Kg), separadas entre sí. */
+.fila-serie-carga {
+  display: flex; align-items: center; gap: .7rem; padding: .55rem 0;
+  border-bottom: 1px solid var(--color-borde-suave);
+}
+.fila-serie-carga:last-child { border-bottom: none; }
+.fila-serie-numero {
+  flex-shrink: 0; width: 4.4rem; font-size: .82rem; font-weight: 600; color: var(--color-texto-suave);
+}
+.campo-mini { display: flex; flex-direction: column; gap: .2rem; font-size: .72rem; color: var(--color-texto-tenue); flex: 1; }
+.campo-mini input {
+  width: 100%; padding: .5rem .6rem; border-radius: var(--radio-sm); border: 1px solid var(--color-borde);
+  background: var(--color-fondo-elevado); color: var(--color-texto); font-size: .92rem; text-align: center;
+}
+.campo-mini input:focus { outline: none; border-color: var(--color-acento); }
 
 /* --------------------------------- Rutinas --------------------------------- */
 .rutina-layout { display: grid; grid-template-columns: 280px 1fr; gap: 1.3rem; align-items: start; }

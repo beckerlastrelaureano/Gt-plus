@@ -317,6 +317,21 @@ const App = (() => {
   //   respaldadas. No es "una rutina más floja", es distinto énfasis.
   // ---------------------------------------------------------------------
   const PROGRAMAS_DEPORTE = {
+    general: {
+      nombre: 'General (sin deporte específico)',
+      porSexo: {
+        masculino: { dias: [
+          { nombre: 'Día 1 — Espalda y bíceps', series: 4, reps: 8, descanso: 75, bloques: [{ grupo: 'Espalda', cantidad: 3, preferirCompuesto: true }, { grupo: 'Bíceps', cantidad: 2 }] },
+          { nombre: 'Día 2 — Pecho y tríceps', series: 4, reps: 8, descanso: 75, bloques: [{ grupo: 'Pecho', cantidad: 3, preferirCompuesto: true }, { grupo: 'Tríceps', cantidad: 2 }] },
+          { nombre: 'Día 3 — Pierna', series: 4, reps: 10, descanso: 90, bloques: [{ grupo: 'Cuádriceps', cantidad: 2, preferirCompuesto: true }, { grupo: 'Isquiotibiales', cantidad: 2 }, { grupo: 'Glúteos', cantidad: 1 }, { grupo: 'Gemelos', cantidad: 1 }] }
+        ]},
+        femenino: { dias: [
+          { nombre: 'Día 1 — Espalda y bíceps', series: 4, reps: 8, descanso: 75, bloques: [{ grupo: 'Espalda', cantidad: 3, preferirCompuesto: true }, { grupo: 'Bíceps', cantidad: 2 }] },
+          { nombre: 'Día 2 — Pecho y tríceps', series: 4, reps: 8, descanso: 75, bloques: [{ grupo: 'Pecho', cantidad: 3, preferirCompuesto: true }, { grupo: 'Tríceps', cantidad: 2 }] },
+          { nombre: 'Día 3 — Pierna y glúteo', series: 4, reps: 10, descanso: 90, bloques: [{ grupo: 'Glúteos', cantidad: 2, preferirCompuesto: true }, { grupo: 'Cuádriceps', cantidad: 1 }, { grupo: 'Isquiotibiales', cantidad: 2 }, { grupo: 'Gemelos', cantidad: 1 }] }
+        ]}
+      }
+    },
     futbol: {
       nombre: 'Fútbol',
       porSexo: {
@@ -406,10 +421,21 @@ const App = (() => {
         </div>
         <p class="texto-suave texto-pequeno" style="margin-top:.9rem">Es un punto de partida curado por grupo muscular — revisá los ejercicios elegidos y ajustá lo que haga falta antes de compartirla.</p>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-fantasma" data-cerrar-modal>Cancelar</button>
-        <button class="btn btn-primario" id="btn-confirmar-deporte">${icon('plus')} Generar rutina</button>
+      <div class="modal-footer" style="justify-content:space-between">
+        <button class="btn btn-fantasma" id="btn-dejar-en-blanco-deporte">O dejarla en blanco</button>
+        <div style="display:flex;gap:.7rem">
+          <button class="btn btn-fantasma" data-cerrar-modal>Cancelar</button>
+          <button class="btn btn-primario" id="btn-confirmar-deporte">${icon('plus')} Generar rutina</button>
+        </div>
       </div>`, { ancho: 'lg', id: 'modal-generar-deporte' });
+
+    $('#btn-dejar-en-blanco-deporte').addEventListener('click', async () => {
+      const rutina = { nombre: 'Rutina libre', objetivo: 'libre', nivel: null, dias: [], calentamiento: [] };
+      await opciones.guardar(idEntidad, rutina);
+      cerrarModal();
+      toast('Rutina en blanco creada. Agregá los días que quieras.', 'exito');
+      opciones.refrescar();
+    });
 
     $('#btn-confirmar-deporte').addEventListener('click', async () => {
       const deporteKey = $('#select-deporte').value;
@@ -879,7 +905,7 @@ const App = (() => {
       </div>
       <div class="panel" style="margin-bottom:1.2rem">
         <div class="campo-fila">
-          <label class="campo" style="flex:1"><span>Buscar socio por DNI</span><input type="text" id="input-buscar-dni" inputmode="numeric" placeholder="Ej: 30123456" autofocus></label>
+          <label class="campo" style="flex:1"><span>Buscar por DNI o nombre</span><input type="text" id="input-buscar-dni" placeholder="Ej: 30123456 o Juana Pérez" autofocus></label>
           <button class="btn btn-primario" id="btn-buscar-dni" style="align-self:flex-end">${icon('search')} Buscar</button>
         </div>
       </div>
@@ -894,7 +920,6 @@ const App = (() => {
         </div>
       </div>
       <div class="filtros-fila" id="filtros-listado-socios" style="margin-top:.8rem">
-        <input type="text" id="filtro-nombre-socios" placeholder="Buscar por nombre..." style="flex:1;min-width:10rem">
         <select id="filtro-estado-socios">
           <option value="todos">Todos los estados</option>
           <option value="al_dia">Solo al día</option>
@@ -919,19 +944,29 @@ const App = (() => {
     const resultadoCont = $('#resultado-busqueda-dni');
 
     async function buscar() {
-      const dni = inputDni.value.trim();
-      if (!dni) return;
+      const texto = inputDni.value.trim();
+      if (!texto) return;
+      // Si es todo dígitos, es un DNI puntual: mostramos la tarjeta exacta
+      // (con botones de pago, editar, etc). Si tiene letras, es un nombre:
+      // no existe una búsqueda exacta por nombre, así que mostramos el
+      // listado completo ya filtrado en vivo (ver el listener de "input"
+      // más abajo) en vez de una tarjeta.
+      if (!/^\d+$/.test(texto)) {
+        resultadoCont.innerHTML = `<p class="texto-suave">Mostrando coincidencias por nombre en el listado de abajo ↓</p>`;
+        mostrarListado();
+        return;
+      }
       resultadoCont.innerHTML = `<p class="texto-suave">Buscando...</p>`;
-      const miembro = await FirebaseService.buscarMiembroPorDni(dni);
+      const miembro = await FirebaseService.buscarMiembroPorDni(texto);
       if (miembro) {
         await pintarMiembroEncontrado(miembro);
       } else {
         resultadoCont.innerHTML = `
           <div class="tarjeta-objetivo">
-            <p class="texto-suave">${icon('warning')} No hay ningún socio registrado con el DNI <strong>${escapeHtml(dni)}</strong>.</p>
+            <p class="texto-suave">${icon('warning')} No hay ningún socio registrado con el DNI <strong>${escapeHtml(texto)}</strong>.</p>
             <button class="btn btn-primario" id="btn-dar-alta-nuevo" style="margin-top:.8rem">${icon('plus')} Registrar socio nuevo</button>
           </div>`;
-        $('#btn-dar-alta-nuevo').addEventListener('click', () => abrirModalNuevoSocio(dni, buscar));
+        $('#btn-dar-alta-nuevo').addEventListener('click', () => abrirModalNuevoSocio(texto, buscar));
       }
     }
 
@@ -1049,7 +1084,25 @@ const App = (() => {
     $('#filtro-estado-socios').addEventListener('change', (e) => { filtroEstadoSocios = e.target.value; pintarFilasSocios(); });
     $('#filtro-modalidad-socios').addEventListener('change', (e) => { filtroModalidadSocios = e.target.value; pintarFilasSocios(); });
     $('#filtro-rutina-socios').addEventListener('change', (e) => { filtroRutinaSocios = e.target.value; pintarFilasSocios(); });
-    $('#filtro-nombre-socios').addEventListener('input', debounce((e) => { filtroNombreSocios = e.target.value; pintarFilasSocios(); }, 200));
+
+    // El mismo cuadro de "Buscar por DNI o nombre" filtra en vivo el
+    // listado de abajo mientras se escribe (por DNI o por nombre), además
+    // de la búsqueda puntual por DNI exacto que dispara el botón "Buscar".
+    inputDni.addEventListener('input', debounce(() => {
+      filtroNombreSocios = inputDni.value.trim();
+      if (filtroNombreSocios) mostrarListado();
+      pintarFilasSocios();
+    }, 200));
+
+    function mostrarListado() {
+      const cont3 = $('#lista-todos-socios');
+      if (cont3.dataset.oculto !== 'false') {
+        cont3.dataset.oculto = 'false';
+        cont3.innerHTML = '<p class="texto-suave">Cargando...</p>';
+        $('#btn-ver-todos-socios').textContent = 'Ocultar listado';
+        cargarListaSocios();
+      }
+    }
 
     $('#lista-todos-socios').dataset.oculto = 'true';
     $('#btn-ver-todos-socios').addEventListener('click', (e) => {
@@ -1113,6 +1166,22 @@ const App = (() => {
     }, 0);
   }
 
+  // "Volumen total" (peso × reps × series sumado) es un concepto de
+  // entrenamiento que a un socio/alumno común no le dice nada. Lo que sí
+  // se entiende de un vistazo es "cuánto peso levantaste": el máximo de
+  // una sola serie, de cualquier ejercicio, en esa carga.
+  function pesoMaximoDeCarga(carga) {
+    return (carga.ejercicios || []).reduce((max, ej) =>
+      (ej.series || []).reduce((m, s) => Math.max(m, Number(s.peso) || 0), max), 0);
+  }
+
+  function maximoEnRango(items, desde, hasta, campoFecha, extractorValor) {
+    return items.reduce((max, it) => {
+      const f = new Date(it[campoFecha]);
+      return (f >= desde && f <= hasta) ? Math.max(max, extractorValor(it)) : max;
+    }, 0);
+  }
+
   function fechaDesdeInputLocal(valorInput) {
     // Igual criterio que ya usamos en otros lados: nunca construir la
     // fecha con new Date("YYYY-MM-DD") a secas (se interpreta como
@@ -1128,10 +1197,10 @@ const App = (() => {
     if (!canvas || typeof Chart === 'undefined') return;
     if (chartsPorId[canvasId]) chartsPorId[canvasId].destroy();
     const buckets = bucketsPorRango(rango);
-    const valores = buckets.map(b => sumarEnRango(historial, b.desde, b.hasta, 'fecha', 'volumenTotal'));
+    const valores = buckets.map(b => maximoEnRango(historial, b.desde, b.hasta, 'fecha', pesoMaximoDeCarga));
     chartsPorId[canvasId] = new Chart(canvas.getContext('2d'), {
       type: rango === 'mes' ? 'line' : 'bar',
-      data: { labels: buckets.map(b => b.label), datasets: [{ label: 'Volumen (kg)', data: valores, borderColor: MARCA.colorAcento, backgroundColor: MARCA.colorAcento + (rango === 'mes' ? '33' : 'CC'), fill: rango === 'mes', tension: .3 }] },
+      data: { labels: buckets.map(b => b.label), datasets: [{ label: 'Peso máximo (kg)', data: valores, borderColor: MARCA.colorAcento, backgroundColor: MARCA.colorAcento + (rango === 'mes' ? '33' : 'CC'), fill: rango === 'mes', tension: .3 }] },
       options: { responsive: true, maintainAspectRatio: false }
     });
   }
@@ -1279,11 +1348,11 @@ const App = (() => {
 
       <div class="grid-cards-resumen" style="grid-template-columns:repeat(2,1fr)">
         <div class="card-stat"><div class="card-stat-icono">${icon('history')}</div><div class="card-stat-valor">${historial.length}</div><div class="card-stat-label">Cargas registradas</div></div>
-        <div class="card-stat exito"><div class="card-stat-icono">${icon('stats')}</div><div class="card-stat-valor">${formatNumero(historial.length ? historial[historial.length - 1].volumenTotal : 0)}</div><div class="card-stat-label">Volumen última carga (kg)</div></div>
+        <div class="card-stat exito"><div class="card-stat-icono">${icon('stats')}</div><div class="card-stat-valor">${formatNumero(historial.length ? pesoMaximoDeCarga(historial[historial.length - 1]) : 0)} kg</div><div class="card-stat-label">Peso máximo (última carga)</div></div>
       </div>
 
       <div class="panel-header-flex" style="margin-top:1.2rem">
-        <h3>Progreso (volumen total por período)</h3>
+        <h3>Progreso</h3>
         <select id="select-rango-progreso-socio">
           <option value="mes">Este mes</option>
           <option value="trimestre">Último trimestre</option>
@@ -1291,6 +1360,7 @@ const App = (() => {
           <option value="anual">Último año</option>
         </select>
       </div>
+      <p class="texto-suave texto-pequeno" style="margin-top:.2rem">El peso más alto que levantó en cualquier ejercicio, en cada período — así se ve de un vistazo si va progresando.</p>
       <div class="contenedor-grafico" style="margin-top:.8rem"><canvas id="grafico-progreso-socio"></canvas></div>
 
       <div class="panel-header-flex" style="margin-top:1.2rem"><h3>Rutina asignada</h3>
@@ -1304,7 +1374,7 @@ const App = (() => {
       <div class="panel" style="margin-top:1.2rem">
         <h3>${rutina ? 'Reemplazar por objetivo o deporte' : 'Elegí un objetivo para generar la rutina'}</h3>
         <div class="grid-objetivos-inicio" id="picker-objetivo-socio" style="margin-top:.8rem"></div>
-        <button class="btn btn-fantasma btn-full" id="btn-generar-por-deporte-socio" style="margin-top:.8rem">${icon('flame')} O generar por deporte (nivel + sexo)</button>
+        <button class="btn btn-fantasma btn-full" id="btn-generar-por-deporte-socio" style="margin-top:.8rem">${icon('flame')} O generar por deporte, nivel y sexo</button>
       </div>
 
       ${rutina && rutina.dias.length ? `
@@ -1404,16 +1474,12 @@ const App = (() => {
         ${ejerciciosValidos.map(({ item, ei, ej }) => `
           <div class="bloque-dia" style="margin-top:.8rem">
             <div class="dia-header"><strong>${escapeHtml(ej.nombre)}</strong></div>
-            <div class="lista-ejercicios-dia">
-              ${item.seriesObjetivo.map((serie, si) => `
-                <div class="fila-ejercicio-dia">
-                  <div class="fila-ejercicio-dia-info" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-                    <span class="texto-suave texto-pequeno" style="width:4rem">Serie ${si + 1}</span>
-                    <input type="number" min="0" step="1" placeholder="Reps" data-reps="${ei}:${si}" value="${serie.reps || ''}" style="width:5rem">
-                    <input type="number" min="0" step="0.5" placeholder="Kg" data-peso="${ei}:${si}" value="${serie.peso || ''}" style="width:5rem">
-                  </div>
-                </div>`).join('')}
-            </div>
+            ${item.seriesObjetivo.map((serie, si) => `
+              <div class="fila-serie-carga">
+                <span class="fila-serie-numero">Serie ${si + 1}</span>
+                <label class="campo-mini"><span>Reps</span><input type="number" min="0" step="1" data-reps="${ei}:${si}" value="${serie.reps || ''}"></label>
+                <label class="campo-mini"><span>Kg</span><input type="number" min="0" step="0.5" data-peso="${ei}:${si}" value="${serie.peso || ''}"></label>
+              </div>`).join('')}
           </div>`).join('') || '<p class="texto-suave texto-pequeno" style="margin-top:.8rem">Este día no tiene ejercicios cargados todavía.</p>'}
       </div>
       <div class="modal-footer">
@@ -1719,7 +1785,7 @@ const App = (() => {
       <div class="panel" style="margin-bottom:1.2rem">
         <h3>Objetivo asignado</h3>
         <div class="grid-objetivos-inicio" id="picker-objetivo-alumno" style="margin-top:.8rem"></div>
-        <button class="btn btn-fantasma btn-full" id="btn-generar-por-deporte-alumno" style="margin-top:.8rem">${icon('flame')} O generar por deporte (nivel + sexo)</button>
+        <button class="btn btn-fantasma btn-full" id="btn-generar-por-deporte-alumno" style="margin-top:.8rem">${icon('flame')} O generar por deporte, nivel y sexo</button>
       </div>
 
       <div class="panel" style="margin-bottom:1.2rem">
@@ -1837,7 +1903,7 @@ const App = (() => {
       type: 'line',
       data: {
         labels: historial.map(h => formatFecha(h.fecha, { day: '2-digit', month: 'short' })),
-        datasets: [{ label: 'Volumen (kg)', data: historial.map(h => h.volumenTotal || 0), borderColor: MARCA.colorAcento, backgroundColor: MARCA.colorAcento + '33', fill: true, tension: .3 }]
+        datasets: [{ label: 'Peso máximo (kg)', data: historial.map(h => pesoMaximoDeCarga(h)), borderColor: MARCA.colorAcento, backgroundColor: MARCA.colorAcento + '33', fill: true, tension: .3 }]
       },
       options: { responsive: true, maintainAspectRatio: false }
     });
@@ -2572,7 +2638,7 @@ const App = (() => {
     if (canvas && typeof Chart !== 'undefined') {
       new Chart(canvas.getContext('2d'), {
         type: 'line',
-        data: { labels: historial.map(h => formatFecha(h.fecha, { day: '2-digit', month: 'short' })), datasets: [{ label: 'Volumen (kg)', data: historial.map(h => h.volumenTotal || 0), borderColor: MARCA.colorAcento, backgroundColor: MARCA.colorAcento + '33', fill: true, tension: .3 }] },
+        data: { labels: historial.map(h => formatFecha(h.fecha, { day: '2-digit', month: 'short' })), datasets: [{ label: 'Peso máximo (kg)', data: historial.map(h => pesoMaximoDeCarga(h)), borderColor: MARCA.colorAcento, backgroundColor: MARCA.colorAcento + '33', fill: true, tension: .3 }] },
         options: { responsive: true, maintainAspectRatio: false }
       });
     }
@@ -2588,7 +2654,7 @@ const App = (() => {
         <button class="fila-historial" data-id="${s.id}">
           <div class="fila-historial-fecha"><strong>${formatFecha(s.fecha, { day: '2-digit', month: 'short' })}</strong><span class="texto-suave">${formatFecha(s.fecha, { year: 'numeric' })}</span></div>
           <div class="fila-historial-info"><strong>${escapeHtml(s.diaNombre || s.rutinaNombre || 'Entrenamiento')}</strong><span class="texto-suave">${(s.ejercicios || []).length} ejercicios · ${seriesCompletas} series · ${formatDuracion(s.duracionSeg)}</span></div>
-          <div class="fila-historial-volumen"><strong>${formatNumero(s.volumenTotal || 0)} kg</strong><span class="texto-suave">volumen</span></div>
+          <div class="fila-historial-volumen"><strong>${formatNumero(pesoMaximoDeCarga(s))} kg</strong><span class="texto-suave">máx.</span></div>
           ${icon('chevron-right')}
         </button>`;
     }).join('');

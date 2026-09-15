@@ -36,6 +36,8 @@
   let dniActual = null;
   let fichaActual = null;
   let rutinaActual = null;
+  let diaActivo = null;
+  let ejercicioExpandido = null;
 
   async function buscarPorDni(dni) {
     const errorEl = $('#error-dni-publico');
@@ -52,6 +54,8 @@
       }
       dniActual = dni;
       fichaActual = fichaDoc.data();
+      diaActivo = null;
+      ejercicioExpandido = null;
 
       const [rutinaDoc, historialSnap, asistenciasSnap] = await Promise.all([
         db.collection('rutinasGym').doc(dni).get(),
@@ -115,19 +119,28 @@
     });
   }
 
+  function pesoMaximoDeCarga(carga) {
+    return (carga.ejercicios || []).reduce((max, ej) =>
+      (ej.series || []).reduce((m, s) => Math.max(m, Number(s.peso) || 0), max), 0);
+  }
+
   function pintarProgreso(historial) {
     const cont = $('#lista-progreso-publico');
     if (!historial.length) { cont.innerHTML = `<p class="texto-suave estado-vacio">Todavía no hay cargas registradas.</p>`; return; }
     const ultimas = historial.slice(0, 8);
-    const maxVolumen = Math.max(...ultimas.map(h => h.volumenTotal || 0), 1);
-    cont.innerHTML = ultimas.map(h => `
-      <div style="margin-bottom:.7rem">
-        <div style="display:flex;justify-content:space-between;font-size:.85rem">
-          <span class="texto-suave">${formatFecha(h.fecha)}${h.diaNombre ? ` · ${escapeHtml(h.diaNombre)}` : ''}</span>
-          <strong>${Math.round(h.volumenTotal || 0)} kg</strong>
-        </div>
-        <div class="barra-carga-mini" style="width:${Math.max(4, Math.round((h.volumenTotal || 0) / maxVolumen * 100))}%"></div>
-      </div>`).join('');
+    const maxima = Math.max(...ultimas.map(h => pesoMaximoDeCarga(h)), 1);
+    cont.innerHTML = `
+      <p class="texto-suave texto-pequeno" style="margin-bottom:.6rem">Peso más alto levantado en cada sesión (no importa el ejercicio) — así se ve de un vistazo si vas progresando.</p>
+      ${ultimas.map(h => {
+        const max = pesoMaximoDeCarga(h);
+        return `<div style="margin-bottom:.7rem">
+          <div style="display:flex;justify-content:space-between;font-size:.85rem">
+            <span class="texto-suave">${formatFecha(h.fecha)}${h.diaNombre ? ` · ${escapeHtml(h.diaNombre)}` : ''}</span>
+            <strong>${Math.round(max)} kg</strong>
+          </div>
+          <div class="barra-carga-mini" style="width:${Math.max(4, Math.round(max / maxima * 100))}%"></div>
+        </div>`;
+      }).join('')}`;
   }
 
   function pintarRutina() {
@@ -138,23 +151,58 @@
       formCont.innerHTML = '';
       return;
     }
-    cont.innerHTML = rutinaActual.dias.map((dia, di) => `
-      <div class="bloque-dia">
-        <div class="dia-header"><strong>${escapeHtml(dia.nombre)}</strong></div>
-        <div class="lista-ejercicios-dia">
-          ${(dia.ejercicios || []).map(item => {
-            const ej = getExerciseById(item.ejercicioId);
-            if (!ej) return '';
-            const primera = (item.seriesObjetivo && item.seriesObjetivo[0]) || {};
-            return `<div class="fila-ejercicio-dia">
-              <div class="fila-ejercicio-dia-info"><strong>${escapeHtml(ej.nombre)}</strong><span class="texto-suave">${item.seriesObjetivo.length} series × ${primera.reps || '-'} reps${primera.peso ? ` @ ${primera.peso}kg` : ''}</span></div>
-            </div>`;
-          }).join('') || '<p class="texto-suave texto-pequeno">Sin ejercicios.</p>'}
-        </div>
-        <button class="btn btn-fantasma btn-full" data-cargar-dia="${di}" style="margin-top:.8rem">Cargar los pesos de hoy — ${escapeHtml(dia.nombre)}</button>
-      </div>`).join('');
 
-    $$('[data-cargar-dia]', cont).forEach(b => b.addEventListener('click', () => mostrarFormularioCarga(Number(b.dataset.cargarDia))));
+    // Nivel 1: lista de días nada más — para no mostrar todo junto.
+    if (diaActivo === null) {
+      cont.innerHTML = rutinaActual.dias.map((dia, di) => `
+        <button class="fila-historial" data-ir-dia="${di}" style="width:100%;text-align:left;cursor:pointer">
+          <div class="fila-historial-info"><strong>${escapeHtml(dia.nombre)}</strong><span class="texto-suave">${(dia.ejercicios || []).length} ejercicios</span></div>
+          <span class="texto-suave" style="font-size:1.1rem">›</span>
+        </button>`).join('');
+      $$('[data-ir-dia]', cont).forEach(b => b.addEventListener('click', () => {
+        diaActivo = Number(b.dataset.irDia);
+        ejercicioExpandido = null;
+        pintarRutina();
+      }));
+      formCont.innerHTML = '';
+      return;
+    }
+
+    // Nivel 2: ejercicios de ESE día, colapsados — se despliegan al tocarlos.
+    const dia = rutinaActual.dias[diaActivo];
+    cont.innerHTML = `
+      <button class="btn btn-fantasma btn-sm" id="btn-volver-dia">‹ Volver a mis días</button>
+      <h3 style="margin:.8rem 0 .6rem">${escapeHtml(dia.nombre)}</h3>
+      ${(dia.ejercicios || []).map((item, ei) => {
+        const ej = getExerciseById(item.ejercicioId);
+        if (!ej) return '';
+        const expandido = ejercicioExpandido === ei;
+        return `
+          <div class="bloque-dia" style="margin-bottom:.6rem">
+            <button data-toggle-ejercicio="${ei}" style="width:100%;text-align:left;background:none;border:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:0;color:inherit;font:inherit">
+              <strong>${escapeHtml(ej.nombre)}</strong>
+              <span class="texto-suave" style="font-size:1.1rem">${expandido ? '︿' : '﹀'}</span>
+            </button>
+            ${expandido ? `
+              <div style="margin-top:.7rem">
+                ${item.seriesObjetivo.map((s, si) => `
+                  <div class="fila-serie-carga">
+                    <span class="fila-serie-numero">Serie ${si + 1}</span>
+                    <span class="texto-suave">${s.reps} reps${s.peso ? ` · ${s.peso} kg` : ''}</span>
+                  </div>`).join('')}
+              </div>` : ''}
+          </div>`;
+      }).join('') || '<p class="texto-suave texto-pequeno">Este día no tiene ejercicios.</p>'}
+      <button class="btn btn-fantasma btn-full" id="btn-cargar-este-dia" style="margin-top:1rem">Cargar los pesos de hoy</button>
+    `;
+
+    $('#btn-volver-dia').addEventListener('click', () => { diaActivo = null; ejercicioExpandido = null; formCont.innerHTML = ''; pintarRutina(); });
+    $$('[data-toggle-ejercicio]', cont).forEach(b => b.addEventListener('click', () => {
+      const ei = Number(b.dataset.toggleEjercicio);
+      ejercicioExpandido = ejercicioExpandido === ei ? null : ei;
+      pintarRutina();
+    }));
+    $('#btn-cargar-este-dia').addEventListener('click', () => mostrarFormularioCarga(diaActivo));
   }
 
   function mostrarFormularioCarga(di) {
@@ -167,16 +215,12 @@
         ${ejerciciosValidos.map(({ item, ei, ej }) => `
           <div class="bloque-dia" style="margin-top:.8rem">
             <div class="dia-header"><strong>${escapeHtml(ej.nombre)}</strong></div>
-            <div class="lista-ejercicios-dia">
-              ${item.seriesObjetivo.map((serie, si) => `
-                <div class="fila-ejercicio-dia">
-                  <div class="fila-ejercicio-dia-info" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-                    <span class="texto-suave texto-pequeno" style="width:4rem">Serie ${si + 1}</span>
-                    <input type="number" min="0" step="1" placeholder="Reps" data-reps-pub="${ei}:${si}" value="${serie.reps || ''}" style="width:5rem">
-                    <input type="number" min="0" step="0.5" placeholder="Kg" data-peso-pub="${ei}:${si}" value="${serie.peso || ''}" style="width:5rem">
-                  </div>
-                </div>`).join('')}
-            </div>
+            ${item.seriesObjetivo.map((serie, si) => `
+              <div class="fila-serie-carga">
+                <span class="fila-serie-numero">Serie ${si + 1}</span>
+                <label class="campo-mini"><span>Reps</span><input type="number" min="0" step="1" data-reps-pub="${ei}:${si}" value="${serie.reps || ''}"></label>
+                <label class="campo-mini"><span>Kg</span><input type="number" min="0" step="0.5" data-peso-pub="${ei}:${si}" value="${serie.peso || ''}"></label>
+              </div>`).join('')}
           </div>`).join('') || '<p class="texto-suave texto-pequeno" style="margin-top:.8rem">Este día no tiene ejercicios cargados.</p>'}
         <div style="display:flex;gap:.5rem;margin-top:1rem">
           <button class="btn btn-fantasma" id="btn-cancelar-carga-publica">Cancelar</button>

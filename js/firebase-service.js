@@ -380,15 +380,49 @@ const FirebaseService = (() => {
       fechaAlta: new Date().toISOString()
     };
     await ref.set(datos);
+    await sincronizarFichaPublica(dniLimpio, datos);
     return { dni: dniLimpio, ...datos };
   }
 
   async function actualizarMiembro(dni, cambios) {
-    await db.collection('miembrosGym').doc(String(dni).trim()).update(cambios);
+    const dniLimpio = String(dni).trim();
+    await db.collection('miembrosGym').doc(dniLimpio).update(cambios);
+    // La ficha pública (para el QR del gimnasio) se mantiene sincronizada
+    // en cada cambio — necesita el documento completo actualizado, no solo
+    // "cambios", así que lo volvemos a leer.
+    const actualizado = (await db.collection('miembrosGym').doc(dniLimpio).get()).data();
+    await sincronizarFichaPublica(dniLimpio, actualizado);
   }
 
   async function eliminarMiembro(dni) {
-    await db.collection('miembrosGym').doc(String(dni).trim()).delete();
+    const dniLimpio = String(dni).trim();
+    await db.collection('miembrosGym').doc(dniLimpio).delete();
+    await db.collection('fichaPublicaGym').doc(dniLimpio).delete().catch(() => {});
+  }
+
+  // ---------------------------------------------------------------------
+  // fichaPublicaGym/{dni} — copia de SOLO los campos no sensibles de un
+  // socio (nombre, modalidad, estado de cuota, fecha de vencimiento
+  // calculada), para el QR público de acceso del gimnasio. A propósito
+  // NO incluye "descripcion" (puede tener notas privadas del profe) ni
+  // nada más de "miembrosGym" — es una proyección deliberadamente
+  // reducida, no una copia completa.
+  // ---------------------------------------------------------------------
+  function calcularFechaVencimiento(datos) {
+    const referencia = new Date(datos.ultimoPagoFecha || datos.fechaAlta || Date.now());
+    return new Date(referencia.getTime() + 31 * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  async function sincronizarFichaPublica(dni, datos) {
+    await db.collection('fichaPublicaGym').doc(dni).set({
+      nombre: datos.nombre || '',
+      apellido: datos.apellido || '',
+      modalidad: datos.modalidad || '',
+      estadoCuota: datos.estadoCuota || 'al_dia',
+      fechaVencimiento: calcularFechaVencimiento(datos),
+      entrenadorId: datos.entrenadorId,
+      actualizada: new Date().toISOString()
+    });
   }
 
   async function listarMiembros() {
@@ -402,11 +436,12 @@ const FirebaseService = (() => {
   // (hasta 500 borrados por lote) para que sea rápido con muchos socios.
   async function borrarTodosLosSocios() {
     if (!usuarioActual) return { socios: 0, asistencias: 0 };
-    const [sniMiembros, snapAsistencias] = await Promise.all([
+    const [sniMiembros, snapAsistencias, snapFichaPublica] = await Promise.all([
       db.collection('miembrosGym').where('entrenadorId', '==', usuarioActual.uid).get(),
-      db.collection('asistenciasGym').where('entrenadorId', '==', usuarioActual.uid).get()
+      db.collection('asistenciasGym').where('entrenadorId', '==', usuarioActual.uid).get(),
+      db.collection('fichaPublicaGym').where('entrenadorId', '==', usuarioActual.uid).get()
     ]);
-    const todosLosDocs = [...sniMiembros.docs, ...snapAsistencias.docs];
+    const todosLosDocs = [...sniMiembros.docs, ...snapAsistencias.docs, ...snapFichaPublica.docs];
     for (let i = 0; i < todosLosDocs.length; i += 500) {
       const lote = db.batch();
       todosLosDocs.slice(i, i + 500).forEach(d => lote.delete(d.ref));
@@ -466,6 +501,15 @@ const FirebaseService = (() => {
     await db.collection('rutinasGym').doc(String(dni).trim()).delete();
   }
 
+  // Lista liviana de qué DNIs ya tienen rutina asignada — para el filtro
+  // "con/sin rutina" del listado de socios (no trae la rutina completa,
+  // solo los IDs, para no pedir de más).
+  async function listarDnisConRutina() {
+    if (!usuarioActual) return [];
+    const snap = await db.collection('rutinasGym').where('entrenadorId', '==', usuarioActual.uid).get();
+    return snap.docs.map(d => d.id);
+  }
+
   // ---------------------------------------------------------------------
   // Cargas de un socio (entrenamientosGym) — historial de repeticiones y
   // peso, para el gráfico de progreso. A diferencia de "entrenamientos"
@@ -521,36 +565,6 @@ const FirebaseService = (() => {
     await db.collection('gastosGym').doc(id).delete();
   }
 
-  // ---------------------------------------------------------------------
-  // Rutina pública por QR (rutinasPublicas/{token}) — copia de solo
-  // lectura de la rutina de un socio, para verla sin loguearse. El token
-  // es un id largo al azar (16 bytes → 32 caracteres hex): la seguridad
-  // depende de que sea imposible de adivinar y de que "list" esté
-  // bloqueado en las reglas, no de que esté "escondido".
-  // ---------------------------------------------------------------------
-  function generarToken() {
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  async function publicarRutinaGym(dni, nombreSocio, rutina, tokenExistente) {
-    const token = tokenExistente || generarToken();
-    await db.collection('rutinasPublicas').doc(token).set({
-      dni: String(dni).trim(),
-      entrenadorId: usuarioActual.uid,
-      nombreSocio: nombreSocio || '',
-      rutina,
-      actualizada: new Date().toISOString()
-    });
-    await db.collection('miembrosGym').doc(String(dni).trim()).update({ tokenQR: token });
-    return token;
-  }
-
-  async function getRutinaPublica(token) {
-    const doc = await db.collection('rutinasPublicas').doc(token).get();
-    return doc.exists ? doc.data() : null;
-  }
-
   return {
     init, configurado,
     resolverCodigo,
@@ -562,9 +576,8 @@ const FirebaseService = (() => {
     registrarPago, marcarCuotaVencida, getPagosDeAlumnos, getPagosDeEntrenadores, eliminarPago,
     buscarMiembroPorDni, registrarMiembro, actualizarMiembro, eliminarMiembro, listarMiembros, borrarTodosLosSocios,
     yaAsistioHoy, marcarAsistencia, getAsistenciasDeHoy,
-    getRutinaGym, guardarRutinaGym, eliminarRutinaGym,
+    getRutinaGym, guardarRutinaGym, eliminarRutinaGym, listarDnisConRutina,
     agregarCargaGym, getHistorialGym,
-    listarGastos, agregarGasto, eliminarGasto,
-    publicarRutinaGym, getRutinaPublica
+    listarGastos, agregarGasto, eliminarGasto
   };
 })();

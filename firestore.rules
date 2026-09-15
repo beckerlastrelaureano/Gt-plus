@@ -203,10 +203,20 @@ service cloud.firestore {
     // asistenciasGym/{id}   (check-in diario de un socio, append-only)
     // ------------------------------------------------------------------
     match /asistenciasGym/{id} {
-      allow read: if esSuperadmin()
-                  || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+      // Público a propósito, igual que entrenamientosGym: el QR necesita
+      // poder chequear "¿ya marqué entrada hoy?" sin estar logueado.
+      allow read: if true;
+      // Además del entrenador autenticado (Recepción/kiosco), se permite
+      // marcar asistencia SIN loguearse desde el QR público — siempre que
+      // el entrenadorId declarado coincida con el que ya tiene guardado
+      // ese DNI en miembrosGym. Así cualquiera puede marcar SU propia
+      // entrada escaneando el QR, pero no puede inventar un entrenador
+      // distinto ni tocar asistencias ya guardadas (esto es "create" nada
+      // más, no da permiso de update/delete).
       allow create: if esSuperadmin()
-                    || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid);
+                    || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid)
+                    || (request.resource.data.entrenadorId ==
+                        get(/databases/$(database)/documents/miembrosGym/$(request.resource.data.dni)).data.entrenadorId);
       allow update, delete: if esSuperadmin()
                              || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
     }
@@ -214,11 +224,13 @@ service cloud.firestore {
     // ------------------------------------------------------------------
     // rutinasGym/{dni}   (rutina de un socio de gimnasio, mismo formato
     // que "rutinas/{alumnoUid}" pero indexada por DNI en vez de uid).
+    // "get" es público a propósito: es lo que permite ver la rutina desde
+    // el QR del gimnasio escribiendo el DNI, sin loguearse. "list" sigue
+    // restringido al entrenador (no hace falta navegar la colección
+    // completa desde el QR, solo pedir UN dni puntual).
     // ------------------------------------------------------------------
     match /rutinasGym/{dni} {
-      allow get: if esSuperadmin()
-                 || resource == null
-                 || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+      allow get: if true;
       allow list: if esSuperadmin()
                   || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
       allow create: if esSuperadmin()
@@ -232,15 +244,17 @@ service cloud.firestore {
 
     // ------------------------------------------------------------------
     // entrenamientosGym/{id}   (cargas de reps/peso de un socio, historial
-    // para el gráfico de progreso — equivalente a "entrenamientos" de
-    // alumnos, pero por DNI y cargado por el entrenador, no en una sesión
-    // guiada con timer).
+    // para el gráfico de progreso). "list"/"get" públicos: es lo que deja
+    // ver el progreso desde el QR con el DNI. "create" público también,
+    // con el mismo cruce contra miembrosGym que asistenciasGym, para que
+    // el socio pueda cargar sus propios pesos después de escanear.
     // ------------------------------------------------------------------
     match /entrenamientosGym/{id} {
-      allow read: if esSuperadmin()
-                  || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+      allow read: if true;
       allow create: if esSuperadmin()
-                    || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid);
+                    || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid)
+                    || (request.resource.data.entrenadorId ==
+                        get(/databases/$(database)/documents/miembrosGym/$(request.resource.data.dni)).data.entrenadorId);
       allow update, delete: if esSuperadmin()
                              || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
     }
@@ -263,18 +277,18 @@ service cloud.firestore {
     }
 
     // ------------------------------------------------------------------
-    // rutinasPublicas/{token}   (copia de solo lectura de la rutina de un
-    // socio, para verla desde un QR SIN loguearse. El "token" es un id
-    // largo al azar — nadie puede adivinarlo, y "list" está bloqueado para
-    // que tampoco se pueda navegar/enumerar toda la colección. Conocer el
-    // token exacto es, a propósito, el único requisito para leerlo.)
+    // fichaPublicaGym/{dni}   (proyección PÚBLICA y reducida de un socio,
+    // para el QR único del gimnasio: nombre, modalidad, estado y fecha de
+    // vencimiento de cuota — a propósito NUNCA incluye "descripcion" ni
+    // nada más de miembrosGym, para no filtrar notas privadas del profe.
+    // "list" bloqueado: solo se puede pedir un DNI puntual, no navegar la
+    // colección completa de socios del gimnasio.)
     // ------------------------------------------------------------------
-    match /rutinasPublicas/{token} {
+    match /fichaPublicaGym/{dni} {
       allow get: if true;
       allow list: if false;
-      allow create: if estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid;
-      allow update: if estoyAutenticado() && resource.data.entrenadorId == request.auth.uid
-                    && request.resource.data.entrenadorId == resource.data.entrenadorId;
+      allow write: if esSuperadmin()
+                   || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid);
       allow delete: if esSuperadmin()
                     || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
     }

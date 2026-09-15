@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rutina</title>
+<title>Mi rutina</title>
 <meta name="robots" content="noindex, nofollow">
 
 <!-- marca.js define y aplica el nombre/colores de este cliente -->
@@ -17,11 +17,12 @@
 <link rel="apple-touch-icon" href="assets/iconos/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/iconos/icon-192.png">
 <style>
-  /* Esta página no tiene sidebar/topbar — es una vista suelta para abrir
-     desde un QR, sin necesidad de loguearse. */
+  /* Página suelta, sin sidebar/topbar — pensada para abrir desde el QR
+     único del gimnasio, sin login. */
   .contenedor-rutina-publica { max-width: 640px; margin: 0 auto; padding: 1.6rem 1.1rem 3rem; }
   .encabezado-rutina-publica { text-align: center; margin-bottom: 1.4rem; }
   .encabezado-rutina-publica img { width: 56px; height: 56px; border-radius: 50%; margin-bottom: .6rem; }
+  .barra-carga-mini { height: 8px; border-radius: 4px; background: var(--color-acento); margin-top: .3rem; }
 </style>
 </head>
 <body>
@@ -30,14 +31,21 @@
   <div class="encabezado-rutina-publica">
     <img src="assets/iconos/logo-mark.png" alt="">
     <h1 style="margin-bottom:.1rem"><span data-marca="nombre"></span><strong data-marca="sufijo"></strong></h1>
-    <p class="texto-suave">Rutina de entrenamiento</p>
+    <p class="texto-suave">Escribí tu DNI para ver tu rutina</p>
   </div>
-  <div id="contenido-rutina-publica">
-    <p class="texto-suave" style="text-align:center">Cargando rutina...</p>
+
+  <div class="panel" style="margin-bottom:1.2rem">
+    <div class="campo-fila">
+      <label class="campo" style="flex:1"><span>DNI</span><input type="text" id="input-dni-publico" inputmode="numeric" placeholder="Ej: 30123456" autofocus></label>
+      <button class="btn btn-primario" id="btn-buscar-dni-publico" style="align-self:flex-end">Ver mi rutina</button>
+    </div>
+    <p id="error-dni-publico" class="auth-error" hidden style="margin-top:.6rem"></p>
   </div>
+
+  <div id="contenido-rutina-publica"></div>
 </div>
 
-<!-- Firebase (compat) — SOLO lectura pública de "rutinasPublicas", sin login -->
+<!-- Firebase (compat) — lectura/escritura pública limitada según firestore.rules, sin login -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 

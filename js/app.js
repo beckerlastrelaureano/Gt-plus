@@ -297,6 +297,133 @@ const App = (() => {
   }
 
   // ---------------------------------------------------------------------
+  // Rutinas preestablecidas por DEPORTE + SEXO + NIVEL — mismo motor de
+  // generación que PROGRAMAS_OBJETIVO (reutiliza elegirEjercicios), pero
+  // sin el filtro por "objetivos" (acá lo que define la selección es el
+  // grupo muscular relevante para el deporte, no un objetivo estético).
+  // Punto de partida para que Becker las revise y ajuste — no reemplaza
+  // el criterio de un profe, es una base curada por grupo muscular.
+  //
+  // Criterio deportivo aplicado (breve, para que se entienda el porqué):
+  // - Fútbol/Básquet/Vóley: predominan tren inferior (potencia, cambios de
+  //   dirección o salto según el deporte), core para transferencia de
+  //   fuerza, y un día de tren superior/hombro proporcional a la demanda
+  //   real del deporte (mucho más en vóley por el remate/saque).
+  // - Variante femenina: mismo volumen general, pero con más trabajo de
+  //   cadera/glúteo y mecánica de aterrizaje — está bien documentado que
+  //   las deportistas mujeres en deportes de salto/cambio de dirección
+  //   tienen mayor riesgo de lesión de rodilla (LCA), y el refuerzo de
+  //   cadena posterior/cadera es una de las estrategias de prevención más
+  //   respaldadas. No es "una rutina más floja", es distinto énfasis.
+  // ---------------------------------------------------------------------
+  const PROGRAMAS_DEPORTE = {
+    futbol: {
+      nombre: 'Fútbol',
+      porSexo: {
+        masculino: { dias: [
+          { nombre: 'Día 1 — Fuerza de tren inferior', series: 4, reps: 6, descanso: 120, bloques: [{ grupo: 'Cuádriceps', cantidad: 2, preferirCompuesto: true }, { grupo: 'Isquiotibiales', cantidad: 2, preferirCompuesto: true }, { grupo: 'Glúteos', cantidad: 1 }, { grupo: 'Gemelos', cantidad: 1 }] },
+          { nombre: 'Día 2 — Core y estabilidad', series: 3, reps: 12, descanso: 45, bloques: [{ grupo: 'Abdomen', cantidad: 2 }, { grupo: 'Oblicuos', cantidad: 1 }, { grupo: 'Lumbares', cantidad: 1 }, { grupo: 'Cadera', cantidad: 1 }] },
+          { nombre: 'Día 3 — Tren superior y prevención', series: 3, reps: 10, descanso: 75, bloques: [{ grupo: 'Espalda', cantidad: 2 }, { grupo: 'Hombros', cantidad: 1 }, { grupo: 'Manguito rotador', cantidad: 1 }, { grupo: 'Aductores', cantidad: 1 }, { grupo: 'Abductores', cantidad: 1 }] }
+        ]},
+        femenino: { dias: [
+          { nombre: 'Día 1 — Fuerza de tren inferior y cadena posterior', series: 4, reps: 6, descanso: 120, bloques: [{ grupo: 'Isquiotibiales', cantidad: 2, preferirCompuesto: true }, { grupo: 'Glúteos', cantidad: 2, preferirCompuesto: true }, { grupo: 'Cuádriceps', cantidad: 1 }, { grupo: 'Gemelos', cantidad: 1 }] },
+          { nombre: 'Día 2 — Estabilidad de cadera (prevención de lesiones)', series: 3, reps: 12, descanso: 45, bloques: [{ grupo: 'Cadera', cantidad: 2 }, { grupo: 'Abductores', cantidad: 1 }, { grupo: 'Aductores', cantidad: 1 }, { grupo: 'Abdomen', cantidad: 1 }, { grupo: 'Oblicuos', cantidad: 1 }] },
+          { nombre: 'Día 3 — Tren superior', series: 3, reps: 10, descanso: 75, bloques: [{ grupo: 'Espalda', cantidad: 2 }, { grupo: 'Hombros', cantidad: 1 }, { grupo: 'Manguito rotador', cantidad: 1 }, { grupo: 'Lumbares', cantidad: 1 }] }
+        ]}
+      }
+    },
+    basquet: {
+      nombre: 'Básquet',
+      porSexo: {
+        masculino: { dias: [
+          { nombre: 'Día 1 — Potencia de piernas y salto', series: 4, reps: 6, descanso: 120, bloques: [{ grupo: 'Cuádriceps', cantidad: 2, preferirCompuesto: true }, { grupo: 'Glúteos', cantidad: 1 }, { grupo: 'Gemelos', cantidad: 2 }, { grupo: 'Isquiotibiales', cantidad: 1 }] },
+          { nombre: 'Día 2 — Tren superior', series: 3, reps: 10, descanso: 75, bloques: [{ grupo: 'Pecho', cantidad: 1 }, { grupo: 'Espalda', cantidad: 2 }, { grupo: 'Hombros', cantidad: 1 }, { grupo: 'Tríceps', cantidad: 1 }, { grupo: 'Bíceps', cantidad: 1 }] },
+          { nombre: 'Día 3 — Core, tobillos y prevención', series: 3, reps: 12, descanso: 45, bloques: [{ grupo: 'Abdomen', cantidad: 2 }, { grupo: 'Oblicuos', cantidad: 1 }, { grupo: 'Tobillos', cantidad: 1 }, { grupo: 'Manguito rotador', cantidad: 1 }] }
+        ]},
+        femenino: { dias: [
+          { nombre: 'Día 1 — Potencia de piernas y mecánica de aterrizaje', series: 4, reps: 6, descanso: 120, bloques: [{ grupo: 'Glúteos', cantidad: 2, preferirCompuesto: true }, { grupo: 'Cuádriceps', cantidad: 1 }, { grupo: 'Isquiotibiales', cantidad: 1 }, { grupo: 'Gemelos', cantidad: 1 }, { grupo: 'Tobillos', cantidad: 1 }] },
+          { nombre: 'Día 2 — Tren superior', series: 3, reps: 10, descanso: 75, bloques: [{ grupo: 'Espalda', cantidad: 2 }, { grupo: 'Pecho', cantidad: 1 }, { grupo: 'Hombros', cantidad: 1 }, { grupo: 'Tríceps', cantidad: 1 }, { grupo: 'Bíceps', cantidad: 1 }] },
+          { nombre: 'Día 3 — Core y estabilidad de cadera', series: 3, reps: 12, descanso: 45, bloques: [{ grupo: 'Abdomen', cantidad: 1 }, { grupo: 'Oblicuos', cantidad: 1 }, { grupo: 'Cadera', cantidad: 2 }, { grupo: 'Abductores', cantidad: 1 }] }
+        ]}
+      }
+    },
+    voley: {
+      nombre: 'Vóley',
+      porSexo: {
+        masculino: { dias: [
+          { nombre: 'Día 1 — Potencia de salto', series: 4, reps: 6, descanso: 120, bloques: [{ grupo: 'Cuádriceps', cantidad: 2, preferirCompuesto: true }, { grupo: 'Glúteos', cantidad: 1 }, { grupo: 'Gemelos', cantidad: 2 }] },
+          { nombre: 'Día 2 — Hombro y tren superior (remate/saque)', series: 3, reps: 10, descanso: 75, bloques: [{ grupo: 'Hombros', cantidad: 2 }, { grupo: 'Manguito rotador', cantidad: 1 }, { grupo: 'Espalda', cantidad: 1 }, { grupo: 'Tríceps', cantidad: 1 }] },
+          { nombre: 'Día 3 — Core y estabilidad', series: 3, reps: 12, descanso: 45, bloques: [{ grupo: 'Abdomen', cantidad: 2 }, { grupo: 'Oblicuos', cantidad: 1 }, { grupo: 'Lumbares', cantidad: 1 }, { grupo: 'Tobillos', cantidad: 1 }] }
+        ]},
+        femenino: { dias: [
+          { nombre: 'Día 1 — Potencia de salto y mecánica de aterrizaje', series: 4, reps: 6, descanso: 120, bloques: [{ grupo: 'Glúteos', cantidad: 2, preferirCompuesto: true }, { grupo: 'Cuádriceps', cantidad: 1 }, { grupo: 'Isquiotibiales', cantidad: 1 }, { grupo: 'Gemelos', cantidad: 1 }] },
+          { nombre: 'Día 2 — Hombro y tren superior (remate/saque)', series: 3, reps: 10, descanso: 75, bloques: [{ grupo: 'Hombros', cantidad: 2 }, { grupo: 'Manguito rotador', cantidad: 1 }, { grupo: 'Espalda', cantidad: 1 }] },
+          { nombre: 'Día 3 — Core y estabilidad de cadera', series: 3, reps: 12, descanso: 45, bloques: [{ grupo: 'Abdomen', cantidad: 1 }, { grupo: 'Oblicuos', cantidad: 1 }, { grupo: 'Cadera', cantidad: 1 }, { grupo: 'Abductores', cantidad: 1 }, { grupo: 'Tobillos', cantidad: 1 }] }
+        ]}
+      }
+    }
+  };
+
+  function generarRutinaDesdeDeporte(deporteKey, sexo, nivel) {
+    const deporte = PROGRAMAS_DEPORTE[deporteKey];
+    const plantilla = deporte.porSexo[sexo] || deporte.porSexo.masculino;
+    const topeNivel = NIVEL_ORDEN[nivel] || 3;
+    const dentroDelNivel = e => (NIVEL_ORDEN[e.dificultad] || 1) <= topeNivel;
+    const pool = EXERCISE_DATABASE.filter(dentroDelNivel);
+    const usados = new Set();
+    const dias = plantilla.dias.map(diaDef => {
+      const ejercicios = [];
+      diaDef.bloques.forEach(bloque => {
+        const elegidos = elegirEjercicios(pool.filter(e => !usados.has(e.id)), bloque.grupo, bloque.cantidad, bloque.preferirCompuesto);
+        elegidos.forEach(ej => {
+          usados.add(ej.id);
+          ejercicios.push({
+            id: `ej-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            ejercicioId: ej.id,
+            seriesObjetivo: Array.from({ length: diaDef.series }, () => ({ reps: diaDef.reps, peso: 0 })),
+            descansoSeg: diaDef.descanso
+          });
+        });
+      });
+      return { id: `dia-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, nombre: diaDef.nombre, ejercicios };
+    });
+    const etiquetaSexo = sexo === 'femenino' ? 'femenino' : 'masculino';
+    return { nombre: `${deporte.nombre} (${etiquetaSexo}) — nivel ${nivel.toLowerCase()}`, objetivo: null, deporte: deporteKey, sexo, nivel, dias, calentamiento: [] };
+  }
+
+  // Reutilizable desde la ficha de alumno Y la ficha de socio — recibe
+  // "opciones.guardar"/"opciones.refrescar" igual que renderDiasRutina,
+  // para no duplicar el modal en cada lugar donde se puede generar rutina.
+  function abrirModalGenerarPorDeporte(idEntidad, opciones) {
+    abrirModal(`
+      <div class="modal-header"><h3>${icon('flame')} Rutina por deporte</h3><button data-cerrar-modal class="btn-icono">${icon('close')}</button></div>
+      <div class="modal-body">
+        <label class="campo"><span>Deporte</span><select id="select-deporte">${Object.entries(PROGRAMAS_DEPORTE).map(([k, d]) => `<option value="${k}">${escapeHtml(d.nombre)}</option>`).join('')}</select></label>
+        <label class="campo" style="margin-top:.7rem"><span>Sexo</span><select id="select-sexo-deporte"><option value="masculino">Masculino</option><option value="femenino">Femenino</option></select></label>
+        <p class="texto-suave" style="margin:.9rem 0 .5rem">Nivel</p>
+        <div class="lista-niveles">
+          ${['Principiante', 'Intermedio', 'Avanzado'].map((n, i) => `<label class="opcion-nivel"><input type="radio" name="nivel-deporte" value="${n}" ${i === 0 ? 'checked' : ''}><div><strong>${n}</strong></div></label>`).join('')}
+        </div>
+        <p class="texto-suave texto-pequeno" style="margin-top:.9rem">Es un punto de partida curado por grupo muscular — revisá los ejercicios elegidos y ajustá lo que haga falta antes de compartirla.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-fantasma" data-cerrar-modal>Cancelar</button>
+        <button class="btn btn-primario" id="btn-confirmar-deporte">${icon('plus')} Generar rutina</button>
+      </div>`, { ancho: 'lg', id: 'modal-generar-deporte' });
+
+    $('#btn-confirmar-deporte').addEventListener('click', async () => {
+      const deporteKey = $('#select-deporte').value;
+      const sexo = $('#select-sexo-deporte').value;
+      const nivel = $('input[name="nivel-deporte"]:checked').value;
+      const rutina = generarRutinaDesdeDeporte(deporteKey, sexo, nivel);
+      await opciones.guardar(idEntidad, rutina);
+      cerrarModal();
+      toast('Rutina generada y asignada.', 'logro');
+      opciones.refrescar();
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // Selector de ejercicios reutilizable
   // ---------------------------------------------------------------------
   // ---------------------------------------------------------------------
@@ -747,6 +874,7 @@ const App = (() => {
         <div style="display:flex;gap:.5rem">
           <button class="btn btn-primario btn-sm" id="btn-nuevo-socio-directo">${icon('plus')} Nuevo socio</button>
           <button class="btn btn-fantasma btn-sm" id="btn-modo-kiosco">${icon('play')} Modo autoservicio</button>
+          <button class="btn btn-fantasma btn-sm" id="btn-qr-gimnasio">${icon('qr')} QR de acceso</button>
         </div>
       </div>
       <div class="panel" style="margin-bottom:1.2rem">
@@ -766,6 +894,7 @@ const App = (() => {
         </div>
       </div>
       <div class="filtros-fila" id="filtros-listado-socios" style="margin-top:.8rem">
+        <input type="text" id="filtro-nombre-socios" placeholder="Buscar por nombre..." style="flex:1;min-width:10rem">
         <select id="filtro-estado-socios">
           <option value="todos">Todos los estados</option>
           <option value="al_dia">Solo al día</option>
@@ -776,6 +905,11 @@ const App = (() => {
           <option value="musculacion">Musculación</option>
           <option value="funcional">Funcional</option>
           <option value="personalizado">Personalizado</option>
+        </select>
+        <select id="filtro-rutina-socios">
+          <option value="todos">Con o sin rutina</option>
+          <option value="con">Con rutina asignada</option>
+          <option value="sin">Sin rutina asignada</option>
         </select>
       </div>
       <div id="lista-todos-socios" style="margin-top:.8rem"></div>
@@ -821,7 +955,7 @@ const App = (() => {
             <button class="btn btn-fantasma btn-sm" id="btn-editar-socio">${icon('edit')} Editar</button>
             <button class="btn-icono btn-icono-peligro" id="btn-borrar-socio" title="Eliminar socio">${icon('trash')}</button>
           </div>
-          <button class="btn btn-fantasma btn-full" id="btn-ficha-completa-socio" style="margin-top:.6rem">${icon('routine')} Rutina, progreso y QR</button>
+          <button class="btn btn-fantasma btn-full" id="btn-ficha-completa-socio" style="margin-top:.6rem">${icon('routine')} Rutina y progreso</button>
           <button class="btn ${yaAsistio ? 'btn-fantasma' : 'btn-primario'} btn-full" id="btn-marcar-asistencia" style="margin-top:1rem" ${yaAsistio ? 'disabled' : ''}>
             ${yaAsistio ? `${icon('check-circle')} Ya registró su entrada hoy` : `${icon('check')} Marcar entrada de hoy`}
           </button>
@@ -857,6 +991,7 @@ const App = (() => {
 
     $('#btn-nuevo-socio-directo').addEventListener('click', () => abrirModalNuevoSocio(inputDni.value.trim(), () => { if (inputDni.value.trim()) buscar(); else cargarListaSocios(); }));
     $('#btn-modo-kiosco').addEventListener('click', () => cambiarVista('kiosco'));
+    $('#btn-qr-gimnasio').addEventListener('click', () => abrirModalQrAccesoGimnasio());
     $('#btn-buscar-dni').addEventListener('click', buscar);
     inputDni.addEventListener('keydown', (e) => { if (e.key === 'Enter') buscar(); });
 
@@ -872,19 +1007,27 @@ const App = (() => {
 
     let filtroEstadoSocios = 'todos';
     let filtroModalidadSocios = 'todas';
+    let filtroRutinaSocios = 'todos';
+    let filtroNombreSocios = '';
     let ultimosSociosCargados = [];
+    let dnisConRutina = new Set();
 
     function pintarFilasSocios() {
       const cont3 = $('#lista-todos-socios');
+      const normalizar = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const textoNombre = normalizar(filtroNombreSocios.trim());
       const filtrados = ultimosSociosCargados.filter(s => {
         if (filtroEstadoSocios === 'al_dia' && socioEstaVencido(s)) return false;
         if (filtroEstadoSocios === 'vencido' && !socioEstaVencido(s)) return false;
         if (filtroModalidadSocios !== 'todas' && s.modalidad !== filtroModalidadSocios) return false;
+        if (filtroRutinaSocios === 'con' && !dnisConRutina.has(s.dni)) return false;
+        if (filtroRutinaSocios === 'sin' && dnisConRutina.has(s.dni)) return false;
+        if (textoNombre && !normalizar([s.nombre, s.apellido].filter(Boolean).join(' ')).includes(textoNombre)) return false;
         return true;
       });
       cont3.innerHTML = filtrados.length ? filtrados.map(s => `
         <div class="fila-historial" data-dni-fila="${s.dni}" role="button" tabindex="0" style="cursor:pointer">
-          <div class="fila-historial-info"><strong>${escapeHtml([s.nombre, s.apellido].filter(Boolean).join(' '))}</strong><span class="texto-suave">DNI ${escapeHtml(s.dni)} · ${MODALIDADES_GYM[s.modalidad] || s.modalidad}</span></div>
+          <div class="fila-historial-info"><strong>${escapeHtml([s.nombre, s.apellido].filter(Boolean).join(' '))}</strong><span class="texto-suave">DNI ${escapeHtml(s.dni)} · ${MODALIDADES_GYM[s.modalidad] || s.modalidad}${dnisConRutina.has(s.dni) ? ' · con rutina' : ' · sin rutina'}</span></div>
           <span class="badge ${socioEstaVencido(s) ? 'badge-peligro' : 'badge-exito'}">${socioEstaVencido(s) ? 'Vencido' : 'Al día'}</span>
         </div>`).join('') : `<p class="texto-suave estado-vacio">Ningún socio coincide con el filtro.</p>`;
       $$('[data-dni-fila]', cont3).forEach(f => f.addEventListener('click', () => {
@@ -897,12 +1040,16 @@ const App = (() => {
     async function cargarListaSocios() {
       const cont3 = $('#lista-todos-socios');
       if (!cont3 || cont3.dataset.oculto !== 'false') return;
-      ultimosSociosCargados = await FirebaseService.listarMiembros();
+      const [socios, dnisRutina] = await Promise.all([FirebaseService.listarMiembros(), FirebaseService.listarDnisConRutina()]);
+      ultimosSociosCargados = socios;
+      dnisConRutina = new Set(dnisRutina);
       pintarFilasSocios();
     }
 
     $('#filtro-estado-socios').addEventListener('change', (e) => { filtroEstadoSocios = e.target.value; pintarFilasSocios(); });
     $('#filtro-modalidad-socios').addEventListener('change', (e) => { filtroModalidadSocios = e.target.value; pintarFilasSocios(); });
+    $('#filtro-rutina-socios').addEventListener('change', (e) => { filtroRutinaSocios = e.target.value; pintarFilasSocios(); });
+    $('#filtro-nombre-socios').addEventListener('input', debounce((e) => { filtroNombreSocios = e.target.value; pintarFilasSocios(); }, 200));
 
     $('#lista-todos-socios').dataset.oculto = 'true';
     $('#btn-ver-todos-socios').addEventListener('click', (e) => {
@@ -1148,16 +1295,17 @@ const App = (() => {
 
       <div class="panel-header-flex" style="margin-top:1.2rem"><h3>Rutina asignada</h3>
         <div style="display:flex;gap:.5rem">
-          ${rutina ? `<button class="btn btn-fantasma btn-sm" id="btn-generar-qr-socio">${icon('qr')} QR de la rutina</button>` : ''}
           ${rutina ? `<button class="btn btn-peligro btn-sm" id="btn-borrar-rutina-socio">${icon('close')} Borrar rutina</button>` : ''}
         </div>
       </div>
       <div id="dias-rutina-socio"></div>
-      ${rutina ? `<button class="btn btn-fantasma" id="btn-agregar-dia-socio">${icon('plus')} Agregar día</button>` : `
-        <div class="panel" style="margin-top:.8rem">
-          <p class="texto-suave" style="margin-bottom:.8rem">Este socio todavía no tiene rutina. Elegí un objetivo para generar una.</p>
-          <div class="grid-objetivos-inicio" id="picker-objetivo-socio"></div>
-        </div>`}
+      ${rutina ? `<button class="btn btn-fantasma" id="btn-agregar-dia-socio">${icon('plus')} Agregar día</button>` : ''}
+
+      <div class="panel" style="margin-top:1.2rem">
+        <h3>${rutina ? 'Reemplazar por objetivo o deporte' : 'Elegí un objetivo para generar la rutina'}</h3>
+        <div class="grid-objetivos-inicio" id="picker-objetivo-socio" style="margin-top:.8rem"></div>
+        <button class="btn btn-fantasma btn-full" id="btn-generar-por-deporte-socio" style="margin-top:.8rem">${icon('flame')} O generar por deporte (nivel + sexo)</button>
+      </div>
 
       ${rutina && rutina.dias.length ? `
         <div class="panel" style="margin-top:1.2rem">
@@ -1174,14 +1322,18 @@ const App = (() => {
 
     const opcionesRutinaSocio = { guardar: (id, r) => FirebaseService.guardarRutinaGym(id, r), contenedorId: 'dias-rutina-socio' };
 
-    if (!rutina) {
-      $('#picker-objetivo-socio').innerHTML = Object.entries(PROGRAMAS_OBJETIVO).map(([key, p]) => `
-        <button class="tarjeta-objetivo-grande" data-objetivo="${key}">
-          <span class="tarjeta-objetivo-grande-icono">${icon(p.icono)}</span>
-          <span class="tarjeta-objetivo-grande-nombre">${escapeHtml(p.nombre)}</span>
-        </button>`).join('');
-      $$('#picker-objetivo-socio [data-objetivo]').forEach(b => b.addEventListener('click', () => elegirObjetivoParaRutinaSocio(dni, b.dataset.objetivo)));
-    } else {
+    // El picker de objetivo/deporte queda SIEMPRE disponible (igual que en
+    // la ficha de alumno) — permite reemplazar la rutina, no solo crearla
+    // la primera vez.
+    $('#picker-objetivo-socio').innerHTML = Object.entries(PROGRAMAS_OBJETIVO).map(([key, p]) => `
+      <button class="tarjeta-objetivo-grande" data-objetivo="${key}">
+        <span class="tarjeta-objetivo-grande-icono">${icon(p.icono)}</span>
+        <span class="tarjeta-objetivo-grande-nombre">${escapeHtml(p.nombre)}</span>
+      </button>`).join('');
+    $$('#picker-objetivo-socio [data-objetivo]').forEach(b => b.addEventListener('click', () => elegirObjetivoParaRutinaSocio(dni, b.dataset.objetivo)));
+    $('#btn-generar-por-deporte-socio').addEventListener('click', () => abrirModalGenerarPorDeporte(dni, { guardar: (id, r) => FirebaseService.guardarRutinaGym(id, r), refrescar: renderFichaSocio }));
+
+    if (rutina) {
       renderDiasRutina(dni, rutina, true, false, opcionesRutinaSocio);
       $('#btn-agregar-dia-socio').addEventListener('click', async () => {
         rutina.dias.push({ id: `dia-${Date.now()}`, nombre: `Día ${rutina.dias.length + 1}`, ejercicios: [] });
@@ -1194,11 +1346,12 @@ const App = (() => {
         toast('Rutina borrada.', 'exito');
         renderFichaSocio();
       });
-      $('#btn-generar-qr-socio').addEventListener('click', () => abrirModalQrRutinaSocio(miembro, rutina));
       $('#btn-abrir-carga')?.addEventListener('click', () => {
         const di = Number($('#select-dia-carga').value);
         abrirModalRegistrarCarga(miembro, rutina, di, () => renderFichaSocio());
       });
+    } else {
+      $('#dias-rutina-socio').innerHTML = `<p class="texto-suave estado-vacio">Este socio todavía no tiene una rutina asignada. Elegí un objetivo o un deporte arriba para generar una.</p>`;
     }
 
     renderGraficoConRango('grafico-progreso-socio', historial, 'mes');
@@ -1284,42 +1437,27 @@ const App = (() => {
     });
   }
 
-  function abrirModalQrRutinaSocio(miembro, rutina) {
-    const nombreCompleto = [miembro.nombre, miembro.apellido].filter(Boolean).join(' ');
+  // QR único del gimnasio: NO lleva ningún dato del socio en el link — es
+  // siempre el mismo, se imprime una sola vez y se pega en la pared/puerta.
+  // Cada persona que lo escanea escribe su propio DNI en rutina.html para
+  // ver su rutina, su progreso y el vencimiento de su cuota.
+  function abrirModalQrAccesoGimnasio() {
+    const url = new URL('rutina.html', window.location.href).href;
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
     abrirModal(`
-      <div class="modal-header"><h3>${icon('qr')} QR de la rutina</h3><button data-cerrar-modal class="btn-icono">${icon('close')}</button></div>
-      <div class="modal-body" id="cuerpo-modal-qr"><p class="texto-suave">Generando...</p></div>
-      <div class="modal-footer">
-        <button class="btn btn-fantasma" data-cerrar-modal>Cerrar</button>
-        <button class="btn btn-primario" id="btn-regenerar-qr">${icon('repeat')} Generar nuevo (invalida el anterior)</button>
-      </div>`, { ancho: 'md', id: 'modal-qr-socio' });
-
-    async function pintar(regenerar) {
-      const cuerpo = $('#cuerpo-modal-qr');
-      cuerpo.innerHTML = `<p class="texto-suave">Generando...</p>`;
-      try {
-        const token = await FirebaseService.publicarRutinaGym(miembro.dni, nombreCompleto, rutina, regenerar ? null : miembro.tokenQR);
-        miembro.tokenQR = token;
-        const url = new URL(`rutina.html?token=${token}`, window.location.href).href;
-        const qr = qrcode(0, 'M');
-        qr.addData(url);
-        qr.make();
-        cuerpo.innerHTML = `
-          <div style="text-align:center">${qr.createSvgTag(6, 8)}</div>
-          <p class="texto-suave texto-pequeno" style="margin-top:.8rem;word-break:break-all">${escapeHtml(url)}</p>
-          <button class="btn btn-fantasma btn-full" id="btn-copiar-link-qr" style="margin-top:.6rem">${icon('save')} Copiar link</button>
-          <p class="texto-suave texto-pequeno" style="margin-top:.6rem">Cualquiera con este link o QR ve la rutina de ${escapeHtml(nombreCompleto)} sin loguearse. Se actualiza sola cada vez que la vuelvas a abrir.</p>`;
-        $('#btn-copiar-link-qr').addEventListener('click', () => {
-          navigator.clipboard?.writeText(url).then(() => toast('Link copiado.', 'exito')).catch(() => toast('No se pudo copiar. Copiá el link manualmente.', 'error'));
-        });
-      } catch (e) {
-        console.error('Error generando QR:', e);
-        cuerpo.innerHTML = `<p class="texto-suave estado-vacio">No se pudo generar el QR (error de conexión o permisos). Cerrá esto e intentá de nuevo.</p>`;
-      }
-    }
-
-    $('#btn-regenerar-qr').addEventListener('click', () => pintar(true));
-    pintar(false);
+      <div class="modal-header"><h3>${icon('qr')} QR de acceso del gimnasio</h3><button data-cerrar-modal class="btn-icono">${icon('close')}</button></div>
+      <div class="modal-body">
+        <div style="text-align:center">${qr.createSvgTag(6, 8)}</div>
+        <p class="texto-suave texto-pequeno" style="margin-top:.8rem;word-break:break-all">${escapeHtml(url)}</p>
+        <button class="btn btn-fantasma btn-full" id="btn-copiar-link-qr-gym" style="margin-top:.6rem">${icon('save')} Copiar link</button>
+        <p class="texto-suave texto-pequeno" style="margin-top:.6rem">Es un solo QR para todo el gimnasio — imprimilo una vez y pegalo en la entrada. Cada socio escanea, escribe su DNI, y ve su rutina, su progreso y el vencimiento de su cuota, sin necesidad de loguearse. También puede marcar su asistencia del día y cargar los pesos que hizo, desde ahí mismo.</p>
+      </div>
+      <div class="modal-footer"><button class="btn btn-primario" data-cerrar-modal>${icon('check')} Listo</button></div>`, { ancho: 'md', id: 'modal-qr-gimnasio' });
+    $('#btn-copiar-link-qr-gym').addEventListener('click', () => {
+      navigator.clipboard?.writeText(url).then(() => toast('Link copiado.', 'exito')).catch(() => toast('No se pudo copiar. Copiá el link manualmente.', 'error'));
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -1581,6 +1719,7 @@ const App = (() => {
       <div class="panel" style="margin-bottom:1.2rem">
         <h3>Objetivo asignado</h3>
         <div class="grid-objetivos-inicio" id="picker-objetivo-alumno" style="margin-top:.8rem"></div>
+        <button class="btn btn-fantasma btn-full" id="btn-generar-por-deporte-alumno" style="margin-top:.8rem">${icon('flame')} O generar por deporte (nivel + sexo)</button>
       </div>
 
       <div class="panel" style="margin-bottom:1.2rem">
@@ -1616,6 +1755,7 @@ const App = (() => {
         <span class="tarjeta-objetivo-grande-nombre">${escapeHtml(p.nombre)}</span>
       </button>`).join('');
     $$('#picker-objetivo-alumno [data-objetivo]').forEach(b => b.addEventListener('click', () => elegirObjetivoParaRutina(uid, b.dataset.objetivo, renderFichaAlumno)));
+    $('#btn-generar-por-deporte-alumno').addEventListener('click', () => abrirModalGenerarPorDeporte(uid, { guardar: (id, r) => FirebaseService.guardarRutina(id, r), refrescar: renderFichaAlumno }));
 
     renderCalendarioAsistencia(historial);
     renderGraficoProgresoAlumno(historial);

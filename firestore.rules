@@ -255,8 +255,14 @@ service cloud.firestore {
                     || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid)
                     || (request.resource.data.entrenadorId ==
                         get(/databases/$(database)/documents/miembrosGym/$(request.resource.data.dni)).data.entrenadorId);
+      // Editar/borrar una carga ya guardada: el entrenador autenticado, O
+      // sin login desde el QR — mismo cruce contra miembrosGym que en
+      // "create", así el socio puede corregir o borrar SUS propias cargas
+      // (no las de otro DNI, porque el cruce usa el dni del documento).
       allow update, delete: if esSuperadmin()
-                             || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
+                             || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid)
+                             || (resource.data.entrenadorId ==
+                                 get(/databases/$(database)/documents/miembrosGym/$(resource.data.dni)).data.entrenadorId);
     }
 
     // ------------------------------------------------------------------

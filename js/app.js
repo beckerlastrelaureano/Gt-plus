@@ -899,7 +899,6 @@ const App = (() => {
       <div class="panel-header-flex"><h2>${icon('search')} Recepción</h2>
         <div style="display:flex;gap:.5rem">
           <button class="btn btn-primario btn-sm" id="btn-nuevo-socio-directo">${icon('plus')} Nuevo socio</button>
-          <button class="btn btn-fantasma btn-sm" id="btn-modo-kiosco">${icon('play')} Modo autoservicio</button>
           <button class="btn btn-fantasma btn-sm" id="btn-qr-gimnasio">${icon('qr')} QR de acceso</button>
         </div>
       </div>
@@ -1016,16 +1015,20 @@ const App = (() => {
       });
       $('#btn-borrar-socio').addEventListener('click', async () => {
         if (!confirm(`¿Eliminar a ${miembro.nombre} (DNI ${miembro.dni})? Esta acción no se puede deshacer.`)) return;
-        await FirebaseService.eliminarMiembro(miembro.dni);
-        toast('Socio eliminado.', 'exito');
-        resultadoCont.innerHTML = '';
-        inputDni.value = '';
-        cargarListaSocios();
+        try {
+          await FirebaseService.eliminarMiembro(miembro.dni);
+          toast('Socio eliminado.', 'exito');
+          resultadoCont.innerHTML = '';
+          inputDni.value = '';
+          if ($('#lista-todos-socios').dataset.oculto === 'false') cargarListaSocios();
+        } catch (e) {
+          console.error('Error eliminando socio:', e);
+          toast('No se pudo eliminar el socio (revisá tu conexión) — probá de nuevo.', 'error');
+        }
       });
     }
 
     $('#btn-nuevo-socio-directo').addEventListener('click', () => abrirModalNuevoSocio(inputDni.value.trim(), () => { if (inputDni.value.trim()) buscar(); else cargarListaSocios(); }));
-    $('#btn-modo-kiosco').addEventListener('click', () => cambiarVista('kiosco'));
     $('#btn-qr-gimnasio').addEventListener('click', () => abrirModalQrAccesoGimnasio());
     $('#btn-buscar-dni').addEventListener('click', buscar);
     inputDni.addEventListener('keydown', (e) => { if (e.key === 'Enter') buscar(); });
@@ -1117,13 +1120,17 @@ const App = (() => {
     $('#btn-borrar-todos-socios').addEventListener('click', async () => {
       const escrito = prompt('Esto borra TODOS los socios y asistencias registradas (no se puede deshacer). Escribí BORRAR para confirmar:');
       if (escrito !== 'BORRAR') { if (escrito !== null) toast('No se borró nada — hay que escribir BORRAR exacto.', 'info'); return; }
-      const resultado = await FirebaseService.borrarTodosLosSocios();
-      toast(`Se borraron ${resultado.socios} socios y ${resultado.asistencias} asistencias.`, 'exito');
-      resultadoCont.innerHTML = '';
-      inputDni.value = '';
-      cargarAsistenciasDeHoy();
-      const cont3 = $('#lista-todos-socios');
-      if (cont3.dataset.oculto === 'false') cargarListaSocios();
+      try {
+        const resultado = await FirebaseService.borrarTodosLosSocios();
+        toast(`Se borraron ${resultado.socios} socios y ${resultado.asistencias} asistencias.`, 'exito');
+        resultadoCont.innerHTML = '';
+        inputDni.value = '';
+        cargarAsistenciasDeHoy();
+        if ($('#lista-todos-socios').dataset.oculto === 'false') cargarListaSocios();
+      } catch (e) {
+        console.error('Error borrando todos los socios:', e);
+        toast('No se pudo completar el borrado (revisá tu conexión) — probá de nuevo.', 'error');
+      }
     });
 
     cargarAsistenciasDeHoy();
@@ -1175,13 +1182,6 @@ const App = (() => {
       (ej.series || []).reduce((m, s) => Math.max(m, Number(s.peso) || 0), max), 0);
   }
 
-  function maximoEnRango(items, desde, hasta, campoFecha, extractorValor) {
-    return items.reduce((max, it) => {
-      const f = new Date(it[campoFecha]);
-      return (f >= desde && f <= hasta) ? Math.max(max, extractorValor(it)) : max;
-    }, 0);
-  }
-
   function fechaDesdeInputLocal(valorInput) {
     // Igual criterio que ya usamos en otros lados: nunca construir la
     // fecha con new Date("YYYY-MM-DD") a secas (se interpreta como
@@ -1192,18 +1192,6 @@ const App = (() => {
   }
 
   const chartsPorId = {};
-  function renderGraficoConRango(canvasId, historial, rango) {
-    const canvas = $(`#${canvasId}`);
-    if (!canvas || typeof Chart === 'undefined') return;
-    if (chartsPorId[canvasId]) chartsPorId[canvasId].destroy();
-    const buckets = bucketsPorRango(rango);
-    const valores = buckets.map(b => maximoEnRango(historial, b.desde, b.hasta, 'fecha', pesoMaximoDeCarga));
-    chartsPorId[canvasId] = new Chart(canvas.getContext('2d'), {
-      type: rango === 'mes' ? 'line' : 'bar',
-      data: { labels: buckets.map(b => b.label), datasets: [{ label: 'Peso máximo (kg)', data: valores, borderColor: MARCA.colorAcento, backgroundColor: MARCA.colorAcento + (rango === 'mes' ? '33' : 'CC'), fill: rango === 'mes', tension: .3 }] },
-      options: { responsive: true, maintainAspectRatio: false }
-    });
-  }
 
   function renderGraficoFinanzas(canvasId, pagos, gastos, rango) {
     const canvas = $(`#${canvasId}`);
@@ -1352,16 +1340,15 @@ const App = (() => {
       </div>
 
       <div class="panel-header-flex" style="margin-top:1.2rem">
-        <h3>Progreso</h3>
-        <select id="select-rango-progreso-socio">
-          <option value="mes">Este mes</option>
-          <option value="trimestre">Último trimestre</option>
-          <option value="6meses">Últimos 6 meses</option>
-          <option value="anual">Último año</option>
-        </select>
+        <h3>Progreso por ejercicio</h3>
+        <select id="select-ejercicio-progreso-socio"></select>
       </div>
-      <p class="texto-suave texto-pequeno" style="margin-top:.2rem">El peso más alto que levantó en cualquier ejercicio, en cada período — así se ve de un vistazo si va progresando.</p>
-      <div class="contenedor-grafico" style="margin-top:.8rem"><canvas id="grafico-progreso-socio"></canvas></div>
+      <p class="texto-suave texto-pequeno" style="margin-top:.2rem">El peso máximo que levantó en ese ejercicio, sesión por sesión — así ve exactamente cómo va mejorando.</p>
+      <div id="tabla-progreso-socio" style="margin-top:.6rem"></div>
+
+      <div class="panel-header-flex" style="margin-top:1.2rem"><h3>Historial de cargas</h3></div>
+      <p class="texto-suave texto-pequeno" style="margin-top:.2rem">Se puede editar o borrar una carga cargada por error.</p>
+      <div id="lista-historial-cargas-socio" style="margin-top:.6rem"></div>
 
       <div class="panel-header-flex" style="margin-top:1.2rem"><h3>Rutina asignada</h3>
         <div style="display:flex;gap:.5rem">
@@ -1424,10 +1411,113 @@ const App = (() => {
       $('#dias-rutina-socio').innerHTML = `<p class="texto-suave estado-vacio">Este socio todavía no tiene una rutina asignada. Elegí un objetivo o un deporte arriba para generar una.</p>`;
     }
 
-    renderGraficoConRango('grafico-progreso-socio', historial, 'mes');
-    $('#select-rango-progreso-socio').addEventListener('change', (e) => renderGraficoConRango('grafico-progreso-socio', historial, e.target.value));
+    // Progreso por ejercicio: dropdown con los ejercicios que aparecen en
+    // el historial de este socio, tabla de fecha/reps/peso para el elegido.
+    const nombresEjercicios = new Map();
+    historial.forEach(c => (c.ejercicios || []).forEach(ej => {
+      if (!nombresEjercicios.has(ej.ejercicioId)) nombresEjercicios.set(ej.ejercicioId, ej.nombre || (getExerciseById(ej.ejercicioId)?.nombre) || 'Ejercicio');
+    }));
+    const selectEjercicio = $('#select-ejercicio-progreso-socio');
+    if (!nombresEjercicios.size) {
+      selectEjercicio.innerHTML = `<option value="">Sin cargas todavía</option>`;
+      $('#tabla-progreso-socio').innerHTML = `<p class="texto-suave estado-vacio">Todavía no hay cargas registradas.</p>`;
+    } else {
+      selectEjercicio.innerHTML = Array.from(nombresEjercicios.entries()).map(([id, nombre]) => `<option value="${id}">${escapeHtml(nombre)}</option>`).join('');
+      pintarTablaProgresoPorEjercicio(historial, selectEjercicio.value);
+      selectEjercicio.addEventListener('change', (e) => pintarTablaProgresoPorEjercicio(historial, e.target.value));
+    }
+
+    pintarHistorialCargasSocio(historial, () => renderFichaSocio());
   }
   RENDERERS['ficha-socio'] = renderFichaSocio;
+
+  function pintarTablaProgresoPorEjercicio(historial, ejercicioId) {
+    const cont = $('#tabla-progreso-socio');
+    const filas = historial
+      .filter(c => (c.ejercicios || []).some(e => e.ejercicioId === ejercicioId))
+      .map(c => {
+        const ej = c.ejercicios.find(e => e.ejercicioId === ejercicioId);
+        const maxPeso = (ej.series || []).reduce((m, s) => Math.max(m, Number(s.peso) || 0), 0);
+        const repsDelMax = (ej.series || []).find(s => (Number(s.peso) || 0) === maxPeso)?.reps || '-';
+        return { fecha: c.fecha, maxPeso, reps: repsDelMax };
+      })
+      .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+    if (!filas.length) { cont.innerHTML = `<p class="texto-suave estado-vacio">Todavía no hay cargas de este ejercicio.</p>`; return; }
+    cont.innerHTML = `
+      <table class="tabla-progreso">
+        <thead><tr><th>Fecha</th><th>Reps</th><th>Peso</th></tr></thead>
+        <tbody>${filas.map(f => `<tr><td>${formatFecha(f.fecha)}</td><td>${f.reps}</td><td>${f.maxPeso} kg</td></tr>`).join('')}</tbody>
+      </table>`;
+  }
+
+  function pintarHistorialCargasSocio(historial, alCambiar) {
+    const cont = $('#lista-historial-cargas-socio');
+    if (!historial.length) { cont.innerHTML = `<p class="texto-suave estado-vacio">Todavía no hay cargas registradas.</p>`; return; }
+    const ordenado = historial.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    cont.innerHTML = ordenado.map(c => `
+      <div class="fila-historial">
+        <div class="fila-historial-info"><strong>${formatFecha(c.fecha)}${c.diaNombre ? ` · ${escapeHtml(c.diaNombre)}` : ''}</strong><span class="texto-suave">${(c.ejercicios || []).length} ejercicios · máx ${Math.round(pesoMaximoDeCarga(c))} kg</span></div>
+        <div style="display:flex;gap:.4rem">
+          <button class="btn-icono" data-editar-carga="${c.id}" title="Editar">${icon('edit')}</button>
+          <button class="btn-icono btn-icono-peligro" data-borrar-carga="${c.id}" title="Borrar">${icon('trash')}</button>
+        </div>
+      </div>`).join('');
+    $$('[data-editar-carga]', cont).forEach(b => b.addEventListener('click', () => {
+      const carga = ordenado.find(c => c.id === b.dataset.editarCarga);
+      if (carga) abrirModalEditarCarga(carga, alCambiar);
+    }));
+    $$('[data-borrar-carga]', cont).forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta carga? Esta acción no se puede deshacer.')) return;
+      try {
+        await FirebaseService.eliminarCargaGym(b.dataset.borrarCarga);
+        toast('Carga borrada.', 'exito');
+        alCambiar();
+      } catch (e) {
+        console.error('Error borrando carga:', e);
+        toast('No se pudo borrar. Probá de nuevo.', 'error');
+      }
+    }));
+  }
+
+  function abrirModalEditarCarga(carga, alGuardar) {
+    abrirModal(`
+      <div class="modal-header"><h3>${icon('edit')} Editar carga — ${formatFecha(carga.fecha)}</h3><button data-cerrar-modal class="btn-icono">${icon('close')}</button></div>
+      <div class="modal-body">
+        ${(carga.ejercicios || []).map((ej, ei) => `
+          <div class="bloque-dia" style="margin-top:.8rem">
+            <div class="dia-header"><strong>${escapeHtml(ej.nombre || getExerciseById(ej.ejercicioId)?.nombre || 'Ejercicio')}</strong></div>
+            ${(ej.series || []).map((serie, si) => `
+              <div class="fila-serie-carga">
+                <span class="fila-serie-numero">Serie ${si + 1}</span>
+                <label class="campo-mini"><span>Reps</span><input type="number" min="0" step="1" data-editar-reps="${ei}:${si}" value="${serie.reps || ''}"></label>
+                <label class="campo-mini"><span>Kg</span><input type="number" min="0" step="0.5" data-editar-peso="${ei}:${si}" value="${serie.peso || ''}"></label>
+              </div>`).join('')}
+          </div>`).join('') || '<p class="texto-suave texto-pequeno">Esta carga no tiene ejercicios.</p>'}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-fantasma" data-cerrar-modal>Cancelar</button>
+        <button class="btn btn-primario" id="btn-guardar-edicion-carga">${icon('check')} Guardar</button>
+      </div>`, { ancho: 'lg', id: 'modal-editar-carga' });
+
+    $('#btn-guardar-edicion-carga').addEventListener('click', async () => {
+      const ejerciciosEditados = (carga.ejercicios || []).map((ej, ei) => ({
+        ...ej,
+        series: (ej.series || []).map((_, si) => ({
+          reps: Number($(`[data-editar-reps="${ei}:${si}"]`)?.value) || 0,
+          peso: Number($(`[data-editar-peso="${ei}:${si}"]`)?.value) || 0
+        }))
+      }));
+      try {
+        await FirebaseService.actualizarCargaGym(carga.id, { ejercicios: ejerciciosEditados });
+        cerrarModal();
+        toast('Carga actualizada.', 'exito');
+        alGuardar();
+      } catch (e) {
+        console.error('Error actualizando carga:', e);
+        toast('No se pudo guardar. Probá de nuevo.', 'error');
+      }
+    });
+  }
 
   async function elegirObjetivoParaRutinaSocio(dni, objetivoKey) {
     if (objetivoKey === 'libre') {
@@ -1525,96 +1615,6 @@ const App = (() => {
       navigator.clipboard?.writeText(url).then(() => toast('Link copiado.', 'exito')).catch(() => toast('No se pudo copiar. Copiá el link manualmente.', 'error'));
     });
   }
-
-  // ---------------------------------------------------------------------
-  // Modo kiosco / autoservicio: pantalla para dejar en una tablet/compu
-  // en la entrada. El socio escribe su propio DNI con el teclado en
-  // pantalla y se le marca la asistencia solo, sin que el profe tenga
-  // que buscar ni tocar nada.
-  // ---------------------------------------------------------------------
-  function renderModoKiosco() {
-    const cont = $('#view-kiosco');
-    let procesando = false;
-
-    cont.innerHTML = `
-      <button class="btn-icono kiosco-salir" id="btn-salir-kiosco" title="Salir del modo autoservicio">${icon('close')}</button>
-      <div class="kiosco-pantalla">
-        <p class="texto-suave" style="margin-bottom:.4rem">Ingresá tu DNI y apretá Enter para registrar tu entrada</p>
-        <input type="text" id="kiosco-input-dni" class="kiosco-display kiosco-input" inputmode="numeric" maxlength="8" placeholder="DNI" autofocus>
-        <div class="teclado-numerico" id="teclado-numerico">
-          ${[1,2,3,4,5,6,7,8,9].map(n => `<button type="button" class="tecla-numerica" data-tecla="${n}">${n}</button>`).join('')}
-          <button type="button" class="tecla-numerica" data-tecla="borrar">${icon('close')}</button>
-          <button type="button" class="tecla-numerica" data-tecla="0">0</button>
-          <button type="button" class="tecla-numerica tecla-numerica-accion" data-tecla="ok">${icon('check')}</button>
-        </div>
-        <div class="kiosco-mensaje" id="kiosco-mensaje"></div>
-      </div>`;
-
-    $('#btn-salir-kiosco').addEventListener('click', () => cambiarVista('recepcion'));
-
-    const input = $('#kiosco-input-dni');
-    const mensaje = $('#kiosco-mensaje');
-    input.focus();
-
-    function resetear() {
-      input.value = '';
-      procesando = false;
-      mensaje.innerHTML = '';
-      input.focus();
-    }
-
-    // El input solo acepta números, hasta 8 dígitos — sirve tanto para
-    // tipear con teclado físico/numérico como para tocar el teclado en
-    // pantalla (que además suma dígitos a este mismo input).
-    input.addEventListener('input', () => {
-      input.value = input.value.replace(/\D/g, '').slice(0, 8);
-      mensaje.innerHTML = '';
-    });
-
-    async function confirmar() {
-      if (procesando) return;
-      const dni = input.value.trim();
-      if (dni.length !== 8) {
-        mensaje.innerHTML = `<p class="kiosco-mensaje-error">${icon('warning')} El DNI tiene que tener 8 números.</p>`;
-        return;
-      }
-      procesando = true;
-      mensaje.innerHTML = `<p class="texto-suave">Buscando...</p>`;
-      const miembro = await FirebaseService.buscarMiembroPorDni(dni);
-      const nombreCompleto = miembro ? [miembro.nombre, miembro.apellido].filter(Boolean).join(' ') : '';
-      if (!miembro) {
-        mensaje.innerHTML = `<p class="kiosco-mensaje-error">${icon('warning')} No encontramos ese DNI. Pedile a un profe que te registre.</p>`;
-        setTimeout(resetear, 3500);
-        return;
-      }
-      if (socioEstaVencido(miembro)) {
-        mensaje.innerHTML = `<p class="kiosco-mensaje-error">${icon('warning')} Hola ${escapeHtml(nombreCompleto.split(' ')[0])}, tu cuota está vencida. Pasá por recepción.</p>`;
-        setTimeout(resetear, 4000);
-        return;
-      }
-      const yaAsistio = await FirebaseService.yaAsistioHoy(miembro.dni);
-      if (yaAsistio) {
-        mensaje.innerHTML = `<p class="kiosco-mensaje-exito">${icon('check-circle')} ¡Ya habías marcado tu entrada hoy, ${escapeHtml(nombreCompleto.split(' ')[0])}!</p>`;
-        setTimeout(resetear, 3000);
-        return;
-      }
-      await FirebaseService.marcarAsistencia(miembro.dni, nombreCompleto);
-      mensaje.innerHTML = `<p class="kiosco-mensaje-exito">${icon('check-circle')} ¡Bienvenido, ${escapeHtml(nombreCompleto.split(' ')[0])}!</p>`;
-      setTimeout(resetear, 3000);
-    }
-
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmar(); });
-
-    $$('[data-tecla]', cont).forEach(b => b.addEventListener('click', () => {
-      if (procesando) return;
-      const tecla = b.dataset.tecla;
-      if (tecla === 'borrar') { input.value = input.value.slice(0, -1); return; }
-      if (tecla === 'ok') { confirmar(); return; }
-      if (input.value.length < 8) input.value += tecla;
-      input.focus();
-    }));
-  }
-  RENDERERS['kiosco'] = renderModoKiosco;
 
   const DIAS_SEMANA_GYM = [{ v: 'lun', t: 'Lun' }, { v: 'mar', t: 'Mar' }, { v: 'mie', t: 'Mié' }, { v: 'jue', t: 'Jue' }, { v: 'vie', t: 'Vie' }, { v: 'sab', t: 'Sáb' }, { v: 'dom', t: 'Dom' }];
 

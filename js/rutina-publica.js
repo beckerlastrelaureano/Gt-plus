@@ -94,8 +94,14 @@
       </div>
 
       <div class="panel" style="margin-bottom:1.2rem">
-        <h3>Progreso reciente</h3>
-        <div id="lista-progreso-publico" style="margin-top:.8rem"></div>
+        <div class="panel-header-flex"><h3>Progreso por ejercicio</h3><select id="select-ejercicio-progreso-publico"></select></div>
+        <div id="tabla-progreso-publico" style="margin-top:.6rem"></div>
+      </div>
+
+      <div class="panel" style="margin-bottom:1.2rem">
+        <h3>Mis cargas</h3>
+        <p class="texto-suave texto-pequeno" style="margin:.2rem 0 .6rem">¿Cargaste algo mal? Lo podés editar o borrar.</p>
+        <div id="lista-cargas-publico"></div>
       </div>
 
       <div class="panel-header-flex" style="margin-top:1.2rem"><h3>Mi rutina</h3></div>
@@ -103,7 +109,8 @@
       <div id="form-carga-publica" style="margin-top:1rem"></div>
     `;
 
-    pintarProgreso(historial);
+    pintarProgresoPorEjercicio(historial);
+    pintarListaCargas(historial);
     pintarRutina();
 
     $('#btn-marcar-asistencia-publico').addEventListener('click', async () => {
@@ -124,23 +131,121 @@
       (ej.series || []).reduce((m, s) => Math.max(m, Number(s.peso) || 0), max), 0);
   }
 
-  function pintarProgreso(historial) {
-    const cont = $('#lista-progreso-publico');
-    if (!historial.length) { cont.innerHTML = `<p class="texto-suave estado-vacio">Todavía no hay cargas registradas.</p>`; return; }
-    const ultimas = historial.slice(0, 8);
-    const maxima = Math.max(...ultimas.map(h => pesoMaximoDeCarga(h)), 1);
+  async function recargarHistorialYPintar() {
+    const snap = await db.collection('entrenamientosGym').where('dni', '==', dniActual).get();
+    const historial = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    pintarProgresoPorEjercicio(historial);
+    pintarListaCargas(historial);
+  }
+
+  function pintarProgresoPorEjercicio(historial) {
+    const select = $('#select-ejercicio-progreso-publico');
+    const nombresEjercicios = new Map();
+    historial.forEach(c => (c.ejercicios || []).forEach(ej => {
+      if (!nombresEjercicios.has(ej.ejercicioId)) nombresEjercicios.set(ej.ejercicioId, ej.nombre || (getExerciseById(ej.ejercicioId)?.nombre) || 'Ejercicio');
+    }));
+    if (!nombresEjercicios.size) {
+      select.innerHTML = `<option value="">Sin cargas</option>`;
+      $('#tabla-progreso-publico').innerHTML = `<p class="texto-suave estado-vacio">Todavía no hay cargas registradas.</p>`;
+      return;
+    }
+    const valorPrevio = select.value;
+    select.innerHTML = Array.from(nombresEjercicios.entries()).map(([id, nombre]) => `<option value="${id}">${escapeHtml(nombre)}</option>`).join('');
+    if (valorPrevio && nombresEjercicios.has(valorPrevio)) select.value = valorPrevio;
+    pintarTablaEjercicio(historial, select.value);
+    select.onchange = (e) => pintarTablaEjercicio(historial, e.target.value);
+  }
+
+  function pintarTablaEjercicio(historial, ejercicioId) {
+    const cont = $('#tabla-progreso-publico');
+    const filas = historial
+      .filter(c => (c.ejercicios || []).some(e => e.ejercicioId === ejercicioId))
+      .map(c => {
+        const ej = c.ejercicios.find(e => e.ejercicioId === ejercicioId);
+        const maxPeso = (ej.series || []).reduce((m, s) => Math.max(m, Number(s.peso) || 0), 0);
+        const repsDelMax = (ej.series || []).find(s => (Number(s.peso) || 0) === maxPeso)?.reps || '-';
+        return { fecha: c.fecha, maxPeso, reps: repsDelMax };
+      })
+      .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+    if (!filas.length) { cont.innerHTML = `<p class="texto-suave estado-vacio">Todavía no hay cargas de este ejercicio.</p>`; return; }
     cont.innerHTML = `
-      <p class="texto-suave texto-pequeno" style="margin-bottom:.6rem">Peso más alto levantado en cada sesión (no importa el ejercicio) — así se ve de un vistazo si vas progresando.</p>
-      ${ultimas.map(h => {
-        const max = pesoMaximoDeCarga(h);
-        return `<div style="margin-bottom:.7rem">
-          <div style="display:flex;justify-content:space-between;font-size:.85rem">
-            <span class="texto-suave">${formatFecha(h.fecha)}${h.diaNombre ? ` · ${escapeHtml(h.diaNombre)}` : ''}</span>
-            <strong>${Math.round(max)} kg</strong>
-          </div>
-          <div class="barra-carga-mini" style="width:${Math.max(4, Math.round(max / maxima * 100))}%"></div>
-        </div>`;
-      }).join('')}`;
+      <table class="tabla-progreso">
+        <thead><tr><th>Fecha</th><th>Reps</th><th>Peso</th></tr></thead>
+        <tbody>${filas.map(f => `<tr><td>${formatFecha(f.fecha)}</td><td>${f.reps}</td><td>${f.maxPeso} kg</td></tr>`).join('')}</tbody>
+      </table>`;
+  }
+
+  function pintarListaCargas(historial) {
+    const cont = $('#lista-cargas-publico');
+    if (!historial.length) { cont.innerHTML = `<p class="texto-suave estado-vacio">Todavía no cargaste ningún peso.</p>`; return; }
+    cont.innerHTML = historial.map(c => `
+      <div class="fila-historial">
+        <div class="fila-historial-info"><strong>${formatFecha(c.fecha)}${c.diaNombre ? ` · ${escapeHtml(c.diaNombre)}` : ''}</strong><span class="texto-suave">${(c.ejercicios || []).length} ejercicios · máx ${Math.round(pesoMaximoDeCarga(c))} kg</span></div>
+        <div style="display:flex;gap:.4rem">
+          <button class="btn-icono" data-editar-carga-pub="${c.id}" title="Editar">✎</button>
+          <button class="btn-icono btn-icono-peligro" data-borrar-carga-pub="${c.id}" title="Borrar">🗑</button>
+        </div>
+      </div>`).join('');
+    $$('[data-editar-carga-pub]', cont).forEach(b => b.addEventListener('click', () => {
+      const carga = historial.find(c => c.id === b.dataset.editarCargaPub);
+      if (carga) abrirModalEditarCargaPublica(carga);
+    }));
+    $$('[data-borrar-carga-pub]', cont).forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta carga? No se puede deshacer.')) return;
+      try {
+        await db.collection('entrenamientosGym').doc(b.dataset.borrarCargaPub).delete();
+        await recargarHistorialYPintar();
+      } catch (e) {
+        console.error('Error borrando carga:', e);
+        alert('No se pudo borrar. Probá de nuevo.');
+      }
+    }));
+  }
+
+  function abrirModalEditarCargaPublica(carga) {
+    // Esta página no tiene el sistema de modales de la app principal —
+    // se arma un overlay chico propio, autocontenido.
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(4,6,8,.7);display:flex;align-items:center;justify-content:center;padding:1rem;z-index:200';
+    overlay.innerHTML = `
+      <div class="panel" style="max-width:480px;width:100%;max-height:85vh;overflow-y:auto">
+        <h3>Editar carga — ${formatFecha(carga.fecha)}</h3>
+        ${(carga.ejercicios || []).map((ej, ei) => `
+          <div class="bloque-dia" style="margin-top:.8rem">
+            <div class="dia-header"><strong>${escapeHtml(ej.nombre || getExerciseById(ej.ejercicioId)?.nombre || 'Ejercicio')}</strong></div>
+            ${(ej.series || []).map((serie, si) => `
+              <div class="fila-serie-carga">
+                <span class="fila-serie-numero">Serie ${si + 1}</span>
+                <label class="campo-mini"><span>Reps</span><input type="number" min="0" step="1" data-ed-reps="${ei}:${si}" value="${serie.reps || ''}"></label>
+                <label class="campo-mini"><span>Kg</span><input type="number" min="0" step="0.5" data-ed-peso="${ei}:${si}" value="${serie.peso || ''}"></label>
+              </div>`).join('')}
+          </div>`).join('')}
+        <div style="display:flex;gap:.6rem;margin-top:1rem">
+          <button class="btn btn-fantasma" id="btn-cancelar-editar-pub" style="flex:1">Cancelar</button>
+          <button class="btn btn-primario" id="btn-guardar-editar-pub" style="flex:1">Guardar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#btn-cancelar-editar-pub').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#btn-guardar-editar-pub').addEventListener('click', async () => {
+      const ejerciciosEditados = (carga.ejercicios || []).map((ej, ei) => ({
+        ...ej,
+        series: (ej.series || []).map((_, si) => ({
+          reps: Number(overlay.querySelector(`[data-ed-reps="${ei}:${si}"]`)?.value) || 0,
+          peso: Number(overlay.querySelector(`[data-ed-peso="${ei}:${si}"]`)?.value) || 0
+        }))
+      }));
+      const volumenTotal = ejerciciosEditados.reduce((t, ej) => t + ej.series.reduce((s, x) => s + x.peso * x.reps, 0), 0);
+      try {
+        await db.collection('entrenamientosGym').doc(carga.id).update({ ejercicios: ejerciciosEditados, volumenTotal });
+        overlay.remove();
+        await recargarHistorialYPintar();
+      } catch (e) {
+        console.error('Error editando carga:', e);
+        alert('No se pudo guardar. Probá de nuevo.');
+      }
+    });
   }
 
   function pintarRutina() {
@@ -243,7 +348,8 @@
           dni: dniActual, entrenadorId: fichaActual.entrenadorId, diaNombre: dia.nombre,
           ejercicios: ejerciciosSesion, volumenTotal, fecha: new Date().toISOString()
         });
-        formCont.innerHTML = `<p class="texto-suave" style="text-align:center">¡Cargado! Volvé a buscar tu DNI para ver el progreso actualizado.</p>`;
+        formCont.innerHTML = `<p class="texto-suave" style="text-align:center">¡Cargado!</p>`;
+        await recargarHistorialYPintar();
       } catch (e) {
         console.error('Error guardando carga:', e);
         alert('No se pudo guardar. Probá de nuevo.');

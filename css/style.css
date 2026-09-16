@@ -361,6 +361,14 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 }
 .campo-mini input:focus { outline: none; border-color: var(--color-acento); }
 
+/* Tabla de progreso por ejercicio (fecha / reps / peso) — reemplaza al
+   gráfico de Chart.js para esta vista: nunca depende de que cargue una
+   librería externa, así que siempre se ve. */
+.tabla-progreso { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.tabla-progreso th, .tabla-progreso td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--color-borde-suave); }
+.tabla-progreso th { color: var(--color-texto-suave); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+.tabla-progreso tr:last-child td { border-bottom: none; }
+
 /* --------------------------------- Rutinas --------------------------------- */
 .rutina-layout { display: grid; grid-template-columns: 280px 1fr; gap: 1.3rem; align-items: start; }
 .rutina-lista-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .9rem; }

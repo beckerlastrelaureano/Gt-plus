@@ -536,6 +536,19 @@ const FirebaseService = (() => {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   }
 
+  async function actualizarCargaGym(id, cambios) {
+    const datos = { ...cambios };
+    if (datos.ejercicios) {
+      datos.volumenTotal = datos.ejercicios.reduce((total, ej) =>
+        total + (ej.series || []).reduce((s, serie) => s + (Number(serie.peso) || 0) * (Number(serie.reps) || 0), 0), 0);
+    }
+    await db.collection('entrenamientosGym').doc(id).update(datos);
+  }
+
+  async function eliminarCargaGym(id) {
+    await db.collection('entrenamientosGym').doc(id).delete();
+  }
+
   // ---------------------------------------------------------------------
   // Finanzas — Gastos manuales (gastosGym). Los INGRESOS no se guardan
   // en una colección aparte: se calculan sumando "pagos" (con
@@ -577,7 +590,7 @@ const FirebaseService = (() => {
     buscarMiembroPorDni, registrarMiembro, actualizarMiembro, eliminarMiembro, listarMiembros, borrarTodosLosSocios,
     yaAsistioHoy, marcarAsistencia, getAsistenciasDeHoy,
     getRutinaGym, guardarRutinaGym, eliminarRutinaGym, listarDnisConRutina,
-    agregarCargaGym, getHistorialGym,
+    agregarCargaGym, getHistorialGym, actualizarCargaGym, eliminarCargaGym,
     listarGastos, agregarGasto, eliminarGasto
   };
 })();

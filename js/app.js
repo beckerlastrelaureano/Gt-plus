@@ -1078,10 +1078,15 @@ const App = (() => {
     async function cargarListaSocios() {
       const cont3 = $('#lista-todos-socios');
       if (!cont3 || cont3.dataset.oculto !== 'false') return;
-      const [socios, dnisRutina] = await Promise.all([FirebaseService.listarMiembros(), FirebaseService.listarDnisConRutina()]);
-      ultimosSociosCargados = socios;
-      dnisConRutina = new Set(dnisRutina);
-      pintarFilasSocios();
+      try {
+        const [socios, dnisRutina] = await Promise.all([FirebaseService.listarMiembros(), FirebaseService.listarDnisConRutina()]);
+        ultimosSociosCargados = socios;
+        dnisConRutina = new Set(dnisRutina);
+        pintarFilasSocios();
+      } catch (e) {
+        console.error('Error cargando el listado de socios:', e);
+        cont3.innerHTML = `<p class="texto-suave estado-vacio">${icon('warning')} No se pudo cargar el listado (revisá tu conexión) — probá tocar "Ver listado completo" de nuevo.</p>`;
+      }
     }
 
     $('#filtro-estado-socios').addEventListener('change', (e) => { filtroEstadoSocios = e.target.value; pintarFilasSocios(); });
@@ -1192,6 +1197,35 @@ const App = (() => {
   }
 
   const chartsPorId = {};
+
+  // Curva suave con área rellena, tipo "mediciones a lo largo del tiempo"
+  // — para ver de un vistazo cómo evoluciona el peso máximo de UN
+  // ejercicio, sesión por sesión (mismos datos que la tabla de abajo).
+  function renderGraficoEjercicio(canvasId, filas) {
+    const canvas = $(`#${canvasId}`);
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (chartsPorId[canvasId]) { chartsPorId[canvasId].destroy(); chartsPorId[canvasId] = null; }
+    if (!filas.length) return;
+    chartsPorId[canvasId] = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: filas.map(f => formatFecha(f.fecha, { day: '2-digit', month: 'short' })),
+        datasets: [{
+          label: 'Peso (kg)', data: filas.map(f => f.maxPeso),
+          borderColor: MARCA.colorAcento, backgroundColor: MARCA.colorAcento + '33',
+          fill: true, tension: .4, pointRadius: 4, pointBackgroundColor: MARCA.colorAcento
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: false, grid: { color: 'rgba(255,255,255,.07)' } }
+        }
+      }
+    });
+  }
 
   function renderGraficoFinanzas(canvasId, pagos, gastos, rango) {
     const canvas = $(`#${canvasId}`);
@@ -1344,7 +1378,8 @@ const App = (() => {
         <select id="select-ejercicio-progreso-socio"></select>
       </div>
       <p class="texto-suave texto-pequeno" style="margin-top:.2rem">El peso máximo que levantó en ese ejercicio, sesión por sesión — así ve exactamente cómo va mejorando.</p>
-      <div id="tabla-progreso-socio" style="margin-top:.6rem"></div>
+      <div class="contenedor-grafico" style="margin-top:.8rem"><canvas id="grafico-progreso-socio"></canvas></div>
+      <div id="tabla-progreso-socio" style="margin-top:.8rem"></div>
 
       <div class="panel-header-flex" style="margin-top:1.2rem"><h3>Historial de cargas</h3></div>
       <p class="texto-suave texto-pequeno" style="margin-top:.2rem">Se puede editar o borrar una carga cargada por error.</p>
@@ -1442,6 +1477,7 @@ const App = (() => {
         return { fecha: c.fecha, maxPeso, reps: repsDelMax };
       })
       .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+    renderGraficoEjercicio('grafico-progreso-socio', filas);
     if (!filas.length) { cont.innerHTML = `<p class="texto-suave estado-vacio">Todavía no hay cargas de este ejercicio.</p>`; return; }
     cont.innerHTML = `
       <table class="tabla-progreso">

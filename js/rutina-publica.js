@@ -95,7 +95,8 @@
 
       <div class="panel" style="margin-bottom:1.2rem">
         <div class="panel-header-flex"><h3>Progreso por ejercicio</h3><select id="select-ejercicio-progreso-publico"></select></div>
-        <div id="tabla-progreso-publico" style="margin-top:.6rem"></div>
+        <div class="contenedor-grafico" style="margin-top:.8rem"><canvas id="grafico-progreso-publico"></canvas></div>
+        <div id="tabla-progreso-publico" style="margin-top:.8rem"></div>
       </div>
 
       <div class="panel" style="margin-bottom:1.2rem">
@@ -129,6 +130,34 @@
   function pesoMaximoDeCarga(carga) {
     return (carga.ejercicios || []).reduce((max, ej) =>
       (ej.series || []).reduce((m, s) => Math.max(m, Number(s.peso) || 0), max), 0);
+  }
+
+  // Curva suave con área rellena — misma idea que en la app principal,
+  // para ver de un vistazo cómo evoluciona el peso máximo de un ejercicio.
+  const chartsPorId = {};
+  function renderGraficoEjercicio(canvasId, filas) {
+    const canvas = $(`#${canvasId}`);
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (chartsPorId[canvasId]) { chartsPorId[canvasId].destroy(); chartsPorId[canvasId] = null; }
+    if (!filas.length) return;
+    chartsPorId[canvasId] = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: filas.map(f => formatFecha(f.fecha)),
+        datasets: [{
+          label: 'Peso (kg)', data: filas.map(f => f.maxPeso),
+          borderColor: (typeof MARCA !== 'undefined' && MARCA.colorAcento) || '#FF7B18',
+          backgroundColor: ((typeof MARCA !== 'undefined' && MARCA.colorAcento) || '#FF7B18') + '33',
+          fill: true, tension: .4, pointRadius: 4,
+          pointBackgroundColor: (typeof MARCA !== 'undefined' && MARCA.colorAcento) || '#FF7B18'
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: { display: false } }, y: { beginAtZero: false, grid: { color: 'rgba(255,255,255,.07)' } } }
+      }
+    });
   }
 
   async function recargarHistorialYPintar() {
@@ -167,6 +196,7 @@
         return { fecha: c.fecha, maxPeso, reps: repsDelMax };
       })
       .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+    renderGraficoEjercicio('grafico-progreso-publico', filas);
     if (!filas.length) { cont.innerHTML = `<p class="texto-suave estado-vacio">Todavía no hay cargas de este ejercicio.</p>`; return; }
     cont.innerHTML = `
       <table class="tabla-progreso">

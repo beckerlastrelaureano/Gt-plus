@@ -215,8 +215,9 @@ service cloud.firestore {
       // más, no da permiso de update/delete).
       allow create: if esSuperadmin()
                     || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid)
-                    || (request.resource.data.entrenadorId ==
-                        get(/databases/$(database)/documents/miembrosGym/$(request.resource.data.dni)).data.entrenadorId);
+                    || (exists(/databases/$(database)/documents/miembrosGym/$(request.resource.data.dni))
+                        && request.resource.data.entrenadorId ==
+                           get(/databases/$(database)/documents/miembrosGym/$(request.resource.data.dni)).data.entrenadorId);
       allow update, delete: if esSuperadmin()
                              || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
     }
@@ -253,16 +254,21 @@ service cloud.firestore {
       allow read: if true;
       allow create: if esSuperadmin()
                     || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid)
-                    || (request.resource.data.entrenadorId ==
-                        get(/databases/$(database)/documents/miembrosGym/$(request.resource.data.dni)).data.entrenadorId);
+                    || (exists(/databases/$(database)/documents/miembrosGym/$(request.resource.data.dni))
+                        && request.resource.data.entrenadorId ==
+                           get(/databases/$(database)/documents/miembrosGym/$(request.resource.data.dni)).data.entrenadorId);
       // Editar/borrar una carga ya guardada: el entrenador autenticado, O
       // sin login desde el QR — mismo cruce contra miembrosGym que en
       // "create", así el socio puede corregir o borrar SUS propias cargas
       // (no las de otro DNI, porque el cruce usa el dni del documento).
+      // "exists(...)" primero evita que la regla explote si el socio ya
+      // fue borrado (esas cargas viejas las puede seguir borrando el
+      // entrenador autenticado por la cláusula anterior, igual).
       allow update, delete: if esSuperadmin()
                              || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid)
-                             || (resource.data.entrenadorId ==
-                                 get(/databases/$(database)/documents/miembrosGym/$(resource.data.dni)).data.entrenadorId);
+                             || (exists(/databases/$(database)/documents/miembrosGym/$(resource.data.dni))
+                                 && resource.data.entrenadorId ==
+                                    get(/databases/$(database)/documents/miembrosGym/$(resource.data.dni)).data.entrenadorId);
     }
 
     // ------------------------------------------------------------------
@@ -292,7 +298,13 @@ service cloud.firestore {
     // ------------------------------------------------------------------
     match /fichaPublicaGym/{dni} {
       allow get: if true;
-      allow list: if false;
+      // "list" NO puede ser público (si no, cualquiera podría enumerar
+      // todos los socios del gimnasio) — pero SÍ tiene que poder listarlo
+      // el propio entrenador autenticado: lo necesita "Borrar todos los
+      // socios" para poder limpiar también estas fichas públicas. Antes
+      // esto estaba en "if false" a secas y rompía ese borrado masivo.
+      allow list: if esSuperadmin()
+                  || (estoyAutenticado() && resource.data.entrenadorId == request.auth.uid);
       allow write: if esSuperadmin()
                    || (estoyAutenticado() && request.resource.data.entrenadorId == request.auth.uid);
       allow delete: if esSuperadmin()
